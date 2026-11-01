@@ -1,0 +1,9 @@
+name: Fuko
+game: Wildfrost
+Wildfrost:
+  goal: true_final_boss_each_clan
+  starting_tribe: random
+  force_storm_bells: true
+  force_overcrank: false
+  death_link: false
+  trap_percentage: 15
