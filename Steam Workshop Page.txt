@@ -1,0 +1,56 @@
+[h1]Wildfrost Archipelago[/h1]
+Connects Wildfrost to an [url=https://archipelago.gg]Archipelago[/url] multiworld randomizer. Your unlocks (cards, companions, charms, pets, tribes, storm bells and the miner's events) are shuffled into a multiworld with other games. Winning battles, beating bosses and completing challenges sends items to other players, and theirs send items to you.
+
+Your normal save is never touched: each seed plays on a save profile of its own.
+
+[h2]What you need[/h2]
+[list]
+[*]Wildfrost, started in its Modded mode, with this mod enabled on the Mods screen
+[*][url=https://github.com/ArchipelagoMW/Archipelago/releases]Archipelago[/url] 0.6.9 or newer, to generate a seed
+[/list]
+
+[h2]1. Install the APWorld[/h2]
+The mod folder contains [b]wildfrost.apworld[/b], which teaches Archipelago how to make Wildfrost seeds. Open the mod folder from Wildfrost's Mods screen, or go to:
+
+Linux:
+[code]~/.steam/steam/steamapps/workshop/content/1811990/3831295900[/code]
+Windows:
+[code]C:\Program Files (x86)\Steam\steamapps\workshop\content\1811990\3831295900[/code]
+(If your Steam library is on another drive, start from that library's steamapps folder instead.)
+
+Double-click [b]wildfrost.apworld[/b] to install it with the Archipelago Launcher, or copy it into Archipelago's [b]custom_worlds[/b] folder.
+
+[h2]2. Make your options file[/h2]
+In the Archipelago Launcher, run [b]Generate Template Options[/b]. Edit [b]Wildfrost.yaml[/b] from the Templates folder (set your slot name and options) and put it in Archipelago's [b]Players[/b] folder along with the other players' files.
+
+[h2]3. Generate and host[/h2]
+Run [b]Generate[/b] from the Launcher. The website can't generate seeds with custom worlds, so generate on your computer, then either upload the resulting zip from the output folder at [url=https://archipelago.gg/uploads]archipelago.gg/uploads[/url] to host a room, or host it yourself with the Launcher's [b]Host[/b].
+
+[h2]4. Connect[/h2]
+Press [b]Play[/b] on Wildfrost's main menu. A popup asks for:
+[list]
+[*][b]Server:[/b] your room's address, for example archipelago.gg:38281 (replace <port> with the port shown on your room page)
+[*][b]Slot name:[/b] the name from your options file
+[*][b]Password:[/b] only if the room has one
+[/list]
+The mod remembers these and reconnects by itself next time. [b]Play without Archipelago[/b] plays your normal save instead.
+
+[h2]Options[/h2]
+[list]
+[*][b]Goal:[/b] win with each clan, beat the True Final Boss with each clan, or beat it Overcranked with each clan
+[*][b]Starting Tribe:[/b] Snowdwellers, Shademancers, Clunkmasters or random. The other two are items.
+[*][b]Extra Storm Bells:[/b] spare Progressive Storm Bells, so the ones you need turn up sooner
+[*][b]Force Storm Bells:[/b] runs must start with as many storm points as you've unlocked (up to 10)
+[*][b]Force Overcrank:[/b] once Overcrank is unlocked, every run must be Overcranked
+[*][b]Trap Percentage:[/b] how much filler is traps instead of Bling and boons
+[*][b]DeathLink:[/b] losing a run kills the other DeathLink players, and theirs makes your leader flee
+[/list]
+
+[h2]In game[/h2]
+[list]
+[*]Nothing is unlocked at the start. Cards arrive in packs of 3, and until you have a card of some kind, its map nodes give Bling (hover a node to see).
+[*]Battles whose check you haven't sent yet with this run's tribe have an orange dot on the map.
+[*]The town's challenge stones show which challenges have sent their check.
+[*][b]F7[/b] shows or hides the log, [b]F9[/b] reconnects, [b]H[/b] shows hints, and [b]Enter[/b] opens chat (! commands go to the server).
+[*]Daily Voyages are switched off while playing a seed.
+[/list]
