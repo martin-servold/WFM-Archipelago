@@ -11,7 +11,7 @@ Your normal save is never touched: each seed plays on a save profile of its own.
 
 ## What you need
 
-- Wildfrost, started in its Modded mode, with this mod enabled on the Mods screen
+- Wildfrost, started in its Modded mode, with this mod subscribed in steam workshop and enabled on the Mods screen
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.9 or newer, to generate a seed
 
 ## Playing
