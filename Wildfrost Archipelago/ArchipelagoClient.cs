@@ -22,6 +22,9 @@ namespace WildfrostArchipelago
     /// The connection settings, held in the mod's [ConfigItem] fields (ArchipelagoMod) so they live in
     /// the game's own per-mod config.cfg. The game reads that file at mod load, but only ever writes
     /// it with the defaults (when it is missing), so Save writes it in the same format itself.
+    /// A copy is kept in the game's save folder (SaveFolder), since a Workshop update can replace the
+    /// mod folder and config.cfg with it (the user's call, 2026-10-31). A config.cfg holding only the
+    /// defaults then takes the saved copy; any other config.cfg (edited by hand) wins.
     /// </summary>
     internal class ConnectionConfig
     {
@@ -31,6 +34,10 @@ namespace WildfrostArchipelago
         public const string DefaultServer = "archipelago.gg:<port>";
         private const string FileName = "config.cfg";
         private const string OldFileName = "connection.txt";
+        private const string SavedFileName = "connection.txt";
+
+        /// <summary>This mod's files that must outlive the mod folder: the settings copy and the offline queue.</summary>
+        public static string SaveFolder => Path.Combine(Application.persistentDataPath, "Archipelago");
 
         public string Server;
         public string Slot;
@@ -42,6 +49,10 @@ namespace WildfrostArchipelago
         {
             FillDefaults(mod);
             MigrateConnectionTxt(mod);
+            if (IsDefault(mod) && ReadKeyValues(Path.Combine(SaveFolder, SavedFileName), mod))
+                WriteConfigFile(mod);
+            else
+                WriteSavedCopy(mod);
             return new ConnectionConfig { Server = mod.server, Slot = mod.slot, Password = mod.password ?? "" };
         }
 
@@ -51,6 +62,51 @@ namespace WildfrostArchipelago
             mod.slot = Slot;
             mod.password = Password;
             WriteConfigFile(mod);
+            WriteSavedCopy(mod);
+        }
+
+        private static bool IsDefault(ArchipelagoMod mod)
+        {
+            foreach (var field in typeof(ArchipelagoMod).GetFields(BindingFlags.Instance | BindingFlags.Public))
+            {
+                var item = field.GetCustomAttribute<WildfrostMod.ConfigItemAttribute>();
+                if (item != null && field.FieldType == typeof(string) && !Equals(field.GetValue(mod) ?? "", item.defaultValue ?? ""))
+                    return false;
+            }
+            return true;
+        }
+
+        private static void WriteSavedCopy(ArchipelagoMod mod)
+        {
+            try
+            {
+                Directory.CreateDirectory(SaveFolder);
+                File.WriteAllLines(Path.Combine(SaveFolder, SavedFileName),
+                    new[] { "server=" + mod.server, "slot=" + mod.slot, "password=" + mod.password });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning(ArchipelagoMod.LogPrefix + "Saving the settings copy failed: " + e.Message);
+            }
+        }
+
+        // key=value lines (server, slot, password) into the fields. False when there is no file.
+        private static bool ReadKeyValues(string path, ArchipelagoMod mod)
+        {
+            if (!File.Exists(path)) return false;
+            foreach (string line in File.ReadAllLines(path))
+            {
+                int eq = line.IndexOf('=');
+                if (eq < 0) continue;
+                string value = line.Substring(eq + 1).Trim();
+                switch (line.Substring(0, eq).Trim().ToLowerInvariant())
+                {
+                    case "server": mod.server = value; break;
+                    case "slot": mod.slot = value; break;
+                    case "password": mod.password = value; break;
+                }
+            }
+            return true;
         }
 
         // Each [ConfigItem] as the game writes it: "//comment", then "<field type> : <title> = <value>".
@@ -87,19 +143,7 @@ namespace WildfrostArchipelago
         private static void MigrateConnectionTxt(ArchipelagoMod mod)
         {
             string path = Path.Combine(mod.ModDirectory, OldFileName);
-            if (!File.Exists(path)) return;
-            foreach (string line in File.ReadAllLines(path))
-            {
-                int eq = line.IndexOf('=');
-                if (eq < 0) continue;
-                string value = line.Substring(eq + 1).Trim();
-                switch (line.Substring(0, eq).Trim().ToLowerInvariant())
-                {
-                    case "server": mod.server = value; break;
-                    case "slot": mod.slot = value; break;
-                    case "password": mod.password = value; break;
-                }
-            }
+            if (!ReadKeyValues(path, mod)) return;
             WriteConfigFile(mod);
             File.Copy(path, path + ".old", true);
             File.Delete(path);
@@ -157,6 +201,11 @@ namespace WildfrostArchipelago
         // pendingPath (one file per AP profile) so they survive a game restart while offline.
         private readonly HashSet<string> queuedLocations = new HashSet<string>();
         private bool goalQueued;
+        // Sent this game session. A send into a connection that has died without the library noticing
+        // yet is lost, so every login sends these again; the server already has most of them, and
+        // those are skipped.
+        private readonly HashSet<string> sentLocations = new HashSet<string>();
+        private bool goalSent;
         private string pendingPath;
         private const string GoalLine = "goal";
 
@@ -177,6 +226,17 @@ namespace WildfrostArchipelago
 
         // Replaced whole by the socket thread's TrackHints callback; read on the main thread.
         private volatile List<HintRow> hints = new List<HintRow>();
+
+        // Reconnecting by itself after a lost connection (an Archipelago client requirement): only
+        // once these settings have logged in, retried with a growing delay until it connects again or
+        // the player disconnects or changes the settings. Checks made meanwhile wait in the offline
+        // queue. Each session's socket callbacks carry its generation, so a closed old session (or
+        // one closed on purpose) doesn't count as lost.
+        private static readonly float[] RetryDelays = { 2f, 5f, 10f, 30f, 60f };
+        private volatile int generation;
+        private bool reconnect;
+        private float retryAt = -1;
+        private int retries;
         public IReadOnlyList<HintRow> Hints => hints;
 
         // Toasts from socket threads (sent checks), shown on the main thread.
@@ -226,7 +286,14 @@ namespace WildfrostArchipelago
 
         public void Connect()
         {
-            Disconnect();
+            retries = 0;
+            Open();
+        }
+
+        private void Open()
+        {
+            CloseSession();
+            retryAt = -1;
             loginHandled = false;
             var config = this.config.Copy();
             if (config.Server.Contains("<port>"))
@@ -235,7 +302,11 @@ namespace WildfrostArchipelago
                 return;
             }
             Status = $"Connecting to {config.Server} as {config.Slot}...";
-            Log(Status);
+            if (retries == 0) Log(Status);
+            else Debug.Log(ArchipelagoMod.LogPrefix + Status);
+            int current = generation;
+            // A retry's failures only go to Player.log; the overlay already said the connection was lost.
+            bool quiet = retries > 0;
 
             // TryConnectAndLogin blocks on the network, so keep it off the main thread.
             ThreadPool.QueueUserWorkItem(_ =>
@@ -245,8 +316,21 @@ namespace WildfrostArchipelago
                     var newSession = ArchipelagoSessionFactory.CreateSession(config.Server);
                     newSession.Items.ItemReceived += OnItemReceived;
                     newSession.MessageLog.OnMessageReceived += OnMessage;
-                    newSession.Socket.SocketClosed += reason => Post($"Socket closed: {reason}", "Disconnected");
-                    newSession.Socket.ErrorReceived += (e, message) => PostError($"Can't reach {config.Server}", e);
+                    newSession.Socket.SocketClosed += reason =>
+                    {
+                        if (current != generation) return;
+                        if (quiet) Debug.Log(ArchipelagoMod.LogPrefix + "Socket closed: " + reason);
+                        else Post($"Socket closed: {reason}", "Disconnected");
+                        pending.Enqueue(LostMarker);
+                    };
+                    newSession.Socket.ErrorReceived += (e, message) =>
+                    {
+                        if (current != generation) return;
+                        if (quiet) Debug.LogWarning(ArchipelagoMod.LogPrefix + $"Can't reach {config.Server}: " + e);
+                        else PostError($"Can't reach {config.Server}", e);
+                        // A lost server only raises this, never SocketClosed (found testing 2026-10-31).
+                        pending.Enqueue(LostMarker);
+                    };
 
                     LoginResult result = newSession.TryConnectAndLogin(
                         ConnectionConfig.Game, config.Slot, ItemsHandlingFlags.AllItems,
@@ -278,19 +362,28 @@ namespace WildfrostArchipelago
                     else
                     {
                         var failure = (LoginFailure)result;
-                        Post("Login failed: " + string.Join("; ", failure.Errors.Concat(failure.ErrorCodes.Select(c => c.ToString()))), "Login failed");
+                        string why = "Login failed: " + string.Join("; ", failure.Errors.Concat(failure.ErrorCodes.Select(c => c.ToString())));
+                        if (quiet) Debug.Log(ArchipelagoMod.LogPrefix + why);
+                        else Post(why, "Login failed");
+                        if (current == generation) pending.Enqueue(LostMarker);
                     }
                 }
                 catch (Exception e)
                 {
                     // Surfaces assembly binding (Newtonsoft) and TLS failures, which are what the spike is testing.
-                    PostError($"Can't connect to {config.Server}", e, "Connect error");
+                    if (quiet) Debug.LogWarning(ArchipelagoMod.LogPrefix + $"Can't connect to {config.Server}: " + e);
+                    else PostError($"Can't connect to {config.Server}", e, "Connect error");
+                    if (current == generation) pending.Enqueue(LostMarker);
                 }
             });
         }
 
         /// <summary>Main thread only. New settings for the next Connect.</summary>
-        public void Configure(ConnectionConfig newConfig) => config = newConfig.Copy();
+        public void Configure(ConnectionConfig newConfig)
+        {
+            config = newConfig.Copy();
+            reconnect = false;
+        }
 
         /// <summary>
         /// Main thread only. Chat to the room; the server runs "!" commands (!help, !hint ...) itself
@@ -317,8 +410,18 @@ namespace WildfrostArchipelago
             });
         }
 
+        /// <summary>Main thread only. On purpose: no reconnecting until the next Connect logs in.</summary>
         public void Disconnect()
         {
+            reconnect = false;
+            retryAt = -1;
+            CloseSession();
+            Status = "Disconnected";
+        }
+
+        private void CloseSession()
+        {
+            generation++;
             var old = session;
             session = null;
             var oldDeathLink = deathLink;
@@ -335,7 +438,6 @@ namespace WildfrostArchipelago
             {
                 Debug.LogWarning(ArchipelagoMod.LogPrefix + "Disconnect threw: " + e);
             }
-            Status = "Disconnected";
         }
 
         private bool ReadSlotData(Dictionary<string, object> slotData)
@@ -427,7 +529,8 @@ namespace WildfrostArchipelago
         {
             var current = session;
             var ids = locationIds;
-            if (current == null || ids == null)
+            // A lost connection keeps its session until the loss is noticed, so check the socket too.
+            if (current == null || ids == null || !current.Socket.Connected)
             {
                 if (queuedLocations.Add(key))
                 {
@@ -443,6 +546,7 @@ namespace WildfrostArchipelago
                 return;
             }
             if (current.Locations.AllLocationsChecked.Contains(id)) return;
+            sentLocations.Add(key);
 
             ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -455,45 +559,51 @@ namespace WildfrostArchipelago
                 }
                 catch (Exception e)
                 {
+                    // Queued again, so the next connection sends it.
                     PostError($"Sending check {key} failed", e);
+                    pending.Enqueue(QueueMarker + key);
                 }
             });
         }
 
         /// <summary>Main thread only.</summary>
-        public void SendGoal()
+        public void SendGoal(bool quiet = false)
         {
             var current = session;
-            if (current == null)
+            if (current == null || !current.Socket.Connected)
             {
                 goalQueued = true;
                 Log("Offline; goal queued");
                 SavePending();
                 return;
             }
+            goalSent = true;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 try
                 {
                     current.SetGoalAchieved();
-                    Post("Goal complete!");
+                    if (!quiet) Post("Goal complete!");
                 }
                 catch (Exception e)
                 {
                     PostError("Sending the goal failed", e);
+                    pending.Enqueue(GoalQueueMarker);
                 }
             });
         }
 
         private void FlushQueued()
         {
-            var keys = queuedLocations.ToList();
-            bool goal = goalQueued;
+            var keys = queuedLocations.Union(sentLocations).ToList();
+            bool goal = goalQueued || goalSent;
+            // Only a queued goal is news; one sent before is sent again quietly.
+            bool announce = goalQueued;
             queuedLocations.Clear();
             goalQueued = false;
             SavePending();
             foreach (string key in keys) SendLocation(key);
-            if (goal) SendGoal();
+            if (goal) SendGoal(quiet: !announce);
         }
 
         public void SendNextMissingCheck(string reason)
@@ -570,7 +680,29 @@ namespace WildfrostArchipelago
                     // saved offline queue, then everything queued this session is sent.
                     ApMode.OnConnected(this, seed, config.Slot);
                     loginHandled = true;
+                    reconnect = true;
+                    retries = 0;
                     FlushQueued();
+                }
+                else if (message.StartsWith(QueueMarker, StringComparison.Ordinal))
+                {
+                    if (queuedLocations.Add(message.Substring(QueueMarker.Length))) SavePending();
+                }
+                else if (message == GoalQueueMarker)
+                {
+                    goalQueued = true;
+                    SavePending();
+                }
+                else if (message == LostMarker)
+                {
+                    if (!reconnect || retryAt >= 0) continue;
+                    // Checks made from now on wait in the offline queue.
+                    CloseSession();
+                    float delay = RetryDelays[Math.Min(retries, RetryDelays.Length - 1)];
+                    if (retries == 0) Log("Connection lost; reconnecting by itself (F9 to try now)");
+                    retries++;
+                    retryAt = Time.unscaledTime + delay;
+                    Status = $"Connection lost; retrying in {delay:0}s";
                 }
                 else if (message.StartsWith(StatusMarker, StringComparison.Ordinal))
                 {
@@ -581,6 +713,7 @@ namespace WildfrostArchipelago
                     Log(message);
                 }
             }
+            if (retryAt >= 0 && Time.unscaledTime >= retryAt) Open();
             while (loginHandled && receivedItems.TryDequeue(out ItemInfo item)) HandleItem(item);
             AnnounceChecks();
             while (loginHandled && deaths.TryDequeue(out DeathLink death)) DeathLinkHandler.Received(death.Source, death.Cause);
@@ -615,6 +748,9 @@ namespace WildfrostArchipelago
 
         private const string StatusMarker = "\u0001status:";
         private const string FlushMarker = "\u0001flush";
+        private const string LostMarker = "\u0001lost";
+        private const string QueueMarker = "\u0001queue:";
+        private const string GoalQueueMarker = "\u0001goal";
 
         // The overlay gets one line with the innermost cause ("Connection refused"); the full
         // exception goes to Player.log. Debug.Log is safe from socket threads.

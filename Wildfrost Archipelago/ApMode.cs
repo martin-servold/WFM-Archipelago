@@ -72,7 +72,23 @@ namespace WildfrostArchipelago
             if (Profile == null)
             {
                 Profile = profile;
-                client.UsePendingFile(Path.Combine(ArchipelagoMod.Directory, "pending", profile + ".txt"));
+                // In the save folder, which a Workshop update doesn't touch. Queues from before that
+                // (in the mod folder) are moved over once.
+                string pending = Path.Combine(ConnectionConfig.SaveFolder, "pending", profile + ".txt");
+                string old = Path.Combine(ArchipelagoMod.Directory, "pending", profile + ".txt");
+                try
+                {
+                    if (File.Exists(old) && !File.Exists(pending))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(pending));
+                        File.Move(old, pending);
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    UnityEngine.Debug.LogWarning(ArchipelagoMod.LogPrefix + "Moving the offline queue failed: " + e.Message);
+                }
+                client.UsePendingFile(pending);
             }
             if (Active)
             {

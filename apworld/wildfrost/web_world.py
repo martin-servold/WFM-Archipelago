@@ -5,6 +5,7 @@ from worlds.AutoWorld import WebWorld
 class WildfrostWebWorld(WebWorld):
     game = "Wildfrost"
     theme = "ice"
+    bug_report_page = "https://github.com/martin-servold/WFM-Archipelago/issues"
 
     setup_en = Tutorial(
         "Multiworld Setup Guide",

@@ -2,7 +2,7 @@
 
 The Mods screen's Workshop button uploads the mod's folder as it is, so this removes what only
 development and local play leave there: the survey log, the content dump, the old connection.txt
-copy, and config.cfg with the player's own server and settings. The game writes a fresh config.cfg
+copy, config.cfg with the player's own server and settings, and an empty offline check queue folder. The game writes a fresh config.cfg
 with the defaults the next time it loads the mod. What stays: the mod DLL, the client library, the
 icon, wildfrost.apworld and the Source mirror (all put there by PostBuild).
 
@@ -34,6 +34,12 @@ def main() -> int:
         if path.exists():
             path.unlink()
             print("removed", name)
+
+    # The offline check queue (one file per AP profile). Empty once everything was sent.
+    pending = MOD_DIR / "pending"
+    if pending.is_dir() and not any(pending.iterdir()):
+        pending.rmdir()
+        print("removed pending (empty)")
 
     present = {p.name for p in MOD_DIR.iterdir()}
     missing, extra = EXPECTED - present, present - EXPECTED
