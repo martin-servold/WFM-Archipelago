@@ -1,0 +1,423 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7743B01A-19FB-45E7-AA6E-2CBFCEE018B5}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>WildfrostArchipelago</RootNamespace>
+    <AssemblyName>WildfrostArchipelago</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <FrameworkPathOverride>/usr/lib/mono/4.7.1-api</FrameworkPathOverride>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>embedded</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="DeadSafe">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/DeadSafe.dll</HintPath>
+    </Reference>
+    <Reference Include="DeadExtensions">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/DeadExtensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="netstandard">
+      <HintPath>/usr/lib/mono/4.7.1-api/Facades/netstandard.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+    <Reference Include="Unity.2D.Animation.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.2D.Animation.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.2D.Common.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.2D.Common.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.2D.IK.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.2D.IK.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.2D.PixelPerfect">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.2D.PixelPerfect.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.2D.SpriteShape.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.2D.SpriteShape.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Addressables">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Addressables.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Burst">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Burst.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Burst.Unsafe">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Burst.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.InternalAPIEngineBridge.001">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.InternalAPIEngineBridge.001.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.InternalAPIEngineBridge.013">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.InternalAPIEngineBridge.013.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Localization">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Localization.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Mathematics.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.MemoryProfiler">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.MemoryProfiler.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipeline.Universal.ShaderLibrary">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipeline.Universal.ShaderLibrary.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Core.ShaderLibrary">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipelines.Core.ShaderLibrary.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.ShaderGraph.ShaderGraphLibrary">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipelines.ShaderGraph.ShaderGraphLibrary.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Shaders">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.RenderPipelines.Universal.Shaders.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.ResourceManager">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.ResourceManager.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.ScriptableBuildPipeline">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.ScriptableBuildPipeline.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Analytics">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Analytics.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Analytics">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Analytics.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Configuration">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Configuration.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Device">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Device.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Environments">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Environments.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Environments.Internal">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Environments.Internal.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Internal">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Internal.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Networking">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Networking.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Registration">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Registration.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Scheduler">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Scheduler.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Telemetry">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Telemetry.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Services.Core.Threading">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Services.Core.Threading.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Timeline">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Unity.Timeline.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AccessibilityModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AccessibilityModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AndroidJNIModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AndroidJNIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AnimationModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ARModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ARModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AssetBundleModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.AudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClothModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ClothModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClusterInputModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ClusterInputModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClusterRendererModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ClusterRendererModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CrashReportingModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.CrashReportingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.DirectorModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.DirectorModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.DSPGraphModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.DSPGraphModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GameCenterModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.GameCenterModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GIModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.GIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GridModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.GridModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.HotReloadModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.HotReloadModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ImageConversionModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.InputModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.JSONSerializeModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.LocalizationModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.LocalizationModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.NVIDIAModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.NVIDIAModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ParticleSystemModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PerformanceReportingModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.PerformanceReportingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.Physics2DModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ProfilerModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ProfilerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.RuntimeInitializeOnLoadManagerInitializerModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.RuntimeInitializeOnLoadManagerInitializerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.ScreenCaptureModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SharedInternalsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.SharedInternalsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SpriteMaskModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.SpriteMaskModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SpriteShapeModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.SpriteShapeModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.StreamingModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.StreamingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SubstanceModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.SubstanceModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SubsystemsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.SubsystemsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TerrainModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TerrainModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TerrainPhysicsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TerrainPhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreTextEngineModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TilemapModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TilemapModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TLSModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.TLSModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UIElementsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsNativeModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UIElementsNativeModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UmbraModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UmbraModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UNETModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UNETModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityAnalyticsCommonModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityAnalyticsCommonModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityAnalyticsModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityAnalyticsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityConnectModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityConnectModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityCurlModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityCurlModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityTestProtocolModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityTestProtocolModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAssetBundleModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityWebRequestAssetBundleModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityWebRequestModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestWWWModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VehiclesModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.VehiclesModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VFXModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.VFXModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VideoModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.VideoModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VirtualTexturingModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.VirtualTexturingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VRModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.VRModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.WindModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.WindModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.XRModule">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/UnityEngine.XRModule.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Shipped next to the mod DLL; the game's mod Bootstrap resolves it by name from the mod folder. -->
+    <Reference Include="Archipelago.MultiClient.Net">
+      <HintPath>lib/Archipelago.MultiClient.Net.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- MultiClient.Net is built against Newtonsoft 11, but we bind to the game's own 13.0 copy instead of shipping a second one. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/Managed/Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ApMode.cs" />
+    <Compile Include="ApEffects.cs" />
+    <Compile Include="ApPatches.cs" />
+    <Compile Include="ApUi.cs" />
+    <Compile Include="ArchipelagoClient.cs" />
+    <Compile Include="ArchipelagoMod.cs" />
+    <Compile Include="ArchipelagoOverlay.cs" />
+    <Compile Include="CheckMarkers.cs" />
+    <Compile Include="CompatCheck.cs" />
+    <Compile Include="ConnectPopup.cs" />
+    <Compile Include="ContentDump.cs" />
+    <Compile Include="DeathLinkHandler.cs" />
+    <Compile Include="HookSurvey.cs" />
+    <Compile Include="LogText.cs" />
+    <Compile Include="LocationHooks.cs" />
+    <Compile Include="ProfileSwitch.cs" />
+    <Compile Include="SurveyLog.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="PostBuild.ps1" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Building the project file directly (not the .sln) leaves SolutionDir as "*Undefined*", and the
+       Source mirror then copied nothing. The solution sits one folder up. -->
+  <PropertyGroup Condition="'$(SolutionDir)' == '' Or '$(SolutionDir)' == '*Undefined*'">
+    <SolutionDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/..'))/</SolutionDir>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PostBuildEvent>pwsh -NoProfile -File "$(ProjectDir)PostBuild.ps1" -SolutionDir "$(SolutionDir.TrimEnd('/'))" -TargetPath "$(TargetPath)" -IconPath "$(ProjectDir)icon.png" -LibDir "$(ProjectDir)lib" -ModRoot "/home/martin/.local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/StreamingAssets/Mods/archipelago"</PostBuildEvent>
+  </PropertyGroup>
+</Project>

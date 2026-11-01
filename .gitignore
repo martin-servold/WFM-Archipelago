@@ -1,0 +1,9 @@
+.vs/
+bin/
+obj/
+*.user
+__pycache__/
+*.pyc
+
+# Dumped from the game (debug=true); not published.
+data/content_dump.txt

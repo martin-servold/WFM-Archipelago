@@ -1,0 +1,284 @@
+# Wildfrost × Archipelago — integration plan
+
+Status: in progress (milestone 3). Open questions for Martin are marked **(Q)**.
+
+Reference material:
+- `../Archipelago/` is a shallow clone of ArchipelagoMW/Archipelago (main). The key docs are in `docs/`: `adding games.md`, `apworld_dev_faq.md`, `world api.md`, `network protocol.md` and `options api.md`.
+- `../Archipelago/worlds/apquest/` is the heavily commented reference world. Copy it as the starting skeleton.
+- `../Archipelago/worlds/inscryption/` is the closest analogue: a Unity card roguelike with a C# mod client, and a small, flat world.
+- `../Archipelago/worlds/ror2/` shows how to model a roguelike: repeatable "Nth chest" checks and items that persist across runs.
+- `../WFM-Companion-Start/` holds our existing mod's build, deploy, Harmony and Load/Unload conventions. Reuse them.
+
+No existing Wildfrost Archipelago integration turned up in a search, so this is new ground.
+
+## 1. Shape of the integration
+
+Archipelago needs two pieces:
+
+1. **APWorld (Python)**: `worlds/wildfrost/`. It defines the item and location names and IDs, the options, the logic and the goal. We ship it to players as `wildfrost.apworld`, and it does not need to be merged upstream.
+2. **Client (C# Wildfrost mod)**: a `WildfrostMod` subclass, built like Companion Start. It does three things:
+   - connects to the AP server
+   - sends location checks when in-game events fire
+   - applies received items
+
+   We use the official .NET client library, [Archipelago.MultiClient.Net](https://www.nuget.org/packages/Archipelago.MultiClient.Net), rather than writing the protocol ourselves.
+
+## 2a. Survey findings (first full run, 2026-10-29)
+
+Sources: `survey.log` and `content_dump.txt` in the deployed mod folder. The run was a Shademancer win on the fully unlocked `Default` profile.
+
+**Run structure.** There are three areas (`node.areaIndex` 0–2) and nine map tiers (`node.tier` 0–8). Each tier holds one battle, so a run always has the same battle and boss count:
+
+| Area | Battles | Boss |
+|---|---|---|
+| 0 | tier 1 | tier 2 |
+| 1 | tiers 3 and 4 | tier 5 |
+| 2 | tier 6 | Final Boss at tier 7, then Final Final Boss at tier 8 |
+
+Which battle appears varies: each tier draws from `CampaignTier.battlePool` (this run got Berries, Goats, Spikers and Wildlings). Use `areaIndex` for the area, not `tier`: tier 2 holds both the area 0 boss and the first area 1 nodes. `PreBattleSetUp` exposes `node.data["battle"]`, the BattleData name.
+
+**Per-area battle locations (23).** "Find each battle" means one location per distinct BattleData per area. The pools come from `CampaignTier.battlePool`:
+
+| Area | Tier | Battles |
+|---|---|---|
+| 0 | 0 | Snowbos, Pengoons, Baby Berries\*, Bombers† |
+| 0 | 1 | Yeti, Shroomers†, Berries, Frosters |
+| 0 | 2 (boss) | Split Boss, Frenzy Boss |
+| 1 | 3 | Spice Monkeys, Goats, Husks |
+| 1 | 4 | Drek, Spikers†, Inkers\* |
+| 1 | 5 (boss) | Toadstool Boss, Clunker Boss |
+| 2 | 6 | Blockers, Wildlings, Mimiks\* |
+| 2 | 7 | Final Boss |
+| 2 | 8 | Final Final Boss |
+
+The markers come from `battleLockers`: † needs Challenge Tribe 1 (Shademancers) and \* needs Challenge Tribe 2 (Clunkmasters). For AP, patch the lock to check the tribe *item* instead of the challenge. The battles' logic then requires that tribe.
+
+An area 0 run may or may not have a tier 0 battle, depending on the map. Across all of Martin's saved game logs, every battle except Bombers has appeared at least once (in the game's `Creating Waves for [X]` lines), so all of them are reachable. The list excludes the Tutorial*, "Snowbos TEST", "Soulbound Boss" and "Dittos" battles, which aren't in any normal tier.
+
+**Vanilla progression is a challenge → unlock graph.** There are 51 `ChallengeData`. Each has a `reward` UnlockData and a `requires` chain. For example, Challenge Pet House (apply 10 Snow) → PetHutFinished → Challenge Pet 1 → Pet 1 → …. The UnlockData resolve to content through `MetaprogressionSystem.data`:
+
+| Unlocks | Resolve to |
+|---|---|
+| `Item 1-6` | Slapcrackers, Snowcracker, Hooker, ScrapPile, MegaMimik, Krono |
+| `Companion 1-6` | TinyTyko, Bombom, Blue, LuminCat, TheBaker, Havok |
+| `Charm 1-27` | the `CardUpgrade*` charms, one per number |
+| `Pet 1-5` | the pets (Wolfie is always unlocked) |
+| `Event 1-3` | the Shade Sculptor, Charm Merchant and Gnome Traveller nodes (items named so since 2026-10-31; they stay useful, as no check needs them) |
+| `Tribe 1`, `Tribe 2` | Shademancers (Magic) and Clunkmasters (Clunk). Basic (Snowdwellers) needs no unlock. |
+
+That gives a clean AP mapping:
+- **Locations**: every ChallengeData completion, through `OnChallengeCompletedSaved` or `ChallengeSystem.SetAsComplete`. Add the per-area battle and boss finds, and per-area node visits.
+- **Items**: every card in every reward pool, plus the pets, the 2 tribes and the 3 event node types. The AP item is the card itself, and vanilla UnlockData stop mattering.
+  - Pool sizes: items 90 (General 23, Snow 2, Basic 20, Clunk 26, Magic 19), units 56 (11, 2, 14, 14, 15), and about 62 charms (41, 1, 8, 6, 6; `CardUpgradeScrap` is in two pools).
+  - The 11 Blessing modifiers could become an option.
+- **Takeover**: `MetaprogressionSystem.GetLockedItems`, `GetLockedCompanions`, `GetLockedCharms`, `GetLockedClasses` and `GetUnlockedPets`, together with `CampaignPopulator.removeLockedCards`, already remove locked cards from pools. Postfixing them to return "everything not received" is the whole pool-control mechanism, with no reward rewriting needed. `OnPullRewards` never fired during the run, so it isn't the reward path.
+- **Goal**: `OnCampaignEnd(Result.Win)`. The `Win` comes after the Final Boss (tier 7), or after the Final Final Boss (tier 8, the True Final Boss) on a 10 bell run. `OnCampaignFinal` fires *after* `OnCampaignEnd`. A harder goal option is "True Win" (Challenge Charm 16, Heart of the Storm).
+
+**Node types seen in the run** (each could be a per-area visit location):
+- Item (treasure)
+- Frozen Travellers (companion)
+- Blingsnail Cave (gold)
+- Woolly Snail (shop)
+- Charm
+- Shade Sculptor (copy item)
+- Injured Companion
+- Charm Shop
+
+Not visited, though they exist: Muncher, Curse Items, Clunk Shop, Journal Page.
+
+**Saves.** `SaveSystem.SetProfile(name, save)` switches the profile folder (`Profiles/<name>/`). The dev console's `save profile <name>` uses it and refuses mid-campaign. The real save is `Default`, backed up to `Deadpan Games/Wildfrost-Profiles-backup-2026-10-29`.
+
+**Vanilla unlock write path** (observed on the blank `ArchipelagoSurvey` profile through F10):
+- Challenge progress accumulates in `save.challengeProgress` during battles.
+- Completion happens at battle end: `OnChallengeCompletedSaved`, then `save.completedChallenges += challenge`, `save.unlocked += reward UnlockData name`, and `save.townNew += same`.
+- `GetUnlockedList()` reads `save.unlocked`. The town scene's unlock sequence (`OnTownUnlock`) only shows what's already saved. We didn't get it to fire, and it isn't needed.
+- For AP, let challenges complete normally (they're the locations) and make the reward a no-op, for example by stripping the `save.unlocked` add or filtering it in `GetUnlockedList`. Pool control stays in the GetLocked* postfixes.
+
+**Profiles: switching needs a reload (found on the 2026-10-30 run).** `SetProfile` only changes the save folder. Several game systems read their per-profile data once, at startup, and keep it in memory, so after F10 they kept Default's copy and saved it into the survey profile. The effects:
+- One win on a blank profile completed six "win a run" challenges at once (Snowdweller, Shademancer, Clunkmaster, Gnomebringer, Sunbringer, Balloonist). End-of-run challenges are checked against `OverallStatsSystem`'s lifetime stats, and those were Default's.
+- Default's challenge progress, card frames and discovered cards were carried over.
+- So the earlier "profiles verified" result was wrong about the survey side. Default itself was never written after a switch, and its baseline still matches. The polluted survey profile was moved to the scratchpad.
+
+The fix is `ProfileSwitch.SetProfile`. After switching, it toggles `enabled` on the GameSystems whose `OnEnable` loads profile data (CardDiscover, CardFrames, Challenge, ChallengeProgress, and the tutorial systems), and calls `OverallStatsSystem.GameStart`. It is used by F10, and milestone 4's per-seed profile must use it too. It still needs an in-game check: one win on a fresh profile should complete only what that run earned.
+
+A blank profile **forces the tutorial** (Leader_Tutorial1, TutorialBattle1/2, tutorial nodes). The AP profile setup must mark the tutorial done (`tutorialProgress`, `tutorialTownDone`, `tutorialCharmDone`, `tutorialCrownDone`, `tutorialInjuryDone`), probably as a `skip_tutorial` option defaulting to on.
+
+**Decided:** challenges are **not chained**. Every challenge is active from the start, and the client must bypass `ChallengeData.requires` (milestone 4). "Win a Daily Voyage" (Challenge Charm 14) is **dropped**. "True Win" (Challenge Charm 16, Heart of the Storm) is left out for now, until we know how it's reached.
+
+**Balance (decided): battles count per tribe, and cards come in packs.** Each battle is a check once per tribe you win it with, as `battle:<area>:<BattleData>:<Basic|Magic|Clunk>` (22 × 3 = 66, since the True Final Boss is left out: see below). That makes 118 locations. Node-visit checks were rejected as too random. A Shademancer or Clunkmaster battle check needs that tribe's item, plus the item for the battle's own tribe lock if it has one. The forced tutorial run's "Tutorial" class counts as Basic.
+
+**No card is unlocked at the start (decided 2026-10-30).** Every card arrives in a **pack**: one item holds 3 cards of one clan and kind, for example "Shademancer Charm Pack 2". The clans are General (the General and Snow pools, which every tribe draws), Snowdweller, Shademancer and Clunkmaster. That gives 73 packs, plus 2 tribes, 3 events and 6 pets, which is 84 items for 118 locations; the rest is Bling. Pack names are fixed, and their contents are shuffled per seed and sent in slot_data `packs`. A group's cards are spread evenly over its packs (decided by the user 2026-10-31): 13 companions in 5 packs are 3, 3, 3, 2, 2, not 3, 3, 3, 3, 1. So every pack holds 2 or 3 cards, and which packs are smaller is shuffled too. Because a run can start with empty reward pools, the client turns Charm, Item, Companion and Charm Shop nodes into Bling nodes while this run's tribe has no card of the pool they need. The charm node would otherwise throw during map setup. That check runs when each node's setup starts, but the map starts every node's setup before any of them draws, so with few cards the last ones still found the deck empty (a 10-bell map, with 11 charms for its charm nodes and shops, threw in the charm node on 2026-10-31). A reward node whose draw comes up empty therefore also becomes a Bling stand-in: the charm node by its throw, item and companion nodes by holding no cards after setup (those had stayed empty treasures with no label warning until 2026-10-31; an empty unopened node from an older save also shows the warning when entering it would give Bling). The empty-pool check builds a continued run's pools first (`EnsurePools`), as entering a node does: before that the map labels fell back to "has this tribe received any card of the kind", and missed that those cards were all in the deck already. Item nodes with a `force` list always roll, since they give their set card even with the pool empty. The Lumin Vase pieces (Broken Vase and Lumin Goop) are not such nodes, as first thought: at 10 storm points `AddSecretCardsSystem` puts them into already rolled nodes once the map is made (in place of one of an item node's cards, or into a shop's stock). The game marks such a node with `glow` (saved with the run). The re-roll keeps them: added while the node has fewer cards than its choices, otherwise in place of a random card without charms, and such a node never becomes Bling. The game's placement also failed under AP: a shop with no plain item (few item cards yet) got no piece, and an item node that rolled no cards threw. A finalizer on `AddSecretCardsSystem.AddCardToNode` makes sure the piece landed (as an extra shop item if needed), and entering a glowing node without a piece puts in the piece missing from the run (not in the deck, on any node, or made into the Lumin Vase). Found 2026-10-31. Before that fix (2026-10-31) a re-rolled vase node lost its piece, or became Bling, and the run could no longer reach the True Final Boss: `SecretFinalBossSystem` only continues past the Final Boss (and sets `trueWin`) with the Lumin Vase in the deck. The vase pieces aren't in any reward pool, so they aren't AP items and are never locked. Received cards also join the current run's pools straight away. Every node rolls its contents when the map is generated at run start, so each reward node and shop records how many of the run's cards it rolled with. A node entered after more cards arrived rolls again first (continuing a saved run doesn't rebuild the reward pools, because vanilla never draws again mid-run, so `ApPatches.EnsurePools` builds them, as a new run does, before a re-roll or a mid-run card. Without it a continued run's re-rolled item node came up empty, 2026-10-31. The rebuilt pools then leave out every card already in the deck or held by a map node, since a rebuilt pool has given nothing out yet: without that, a re-rolled shop offered a card an item node already had, 2026-10-31. Boss rewards are saved as objects (`BossRewardDataRandomCharm.Data.upgradeName`), so the game's own save objects are read field by field too: before that, a charm machine offered a charm a boss reward already had), and a Bling node that stood in for a reward node turns back into it. The run's rewards are the `CharacterRewards` on the player (where reward nodes draw from), never the first one in the scene: the gnome traveller adds its own to the Campaign object at map setup (every tribe's items) and keeps it for the run, and finding that one sent mid-run cards and the empty-pool check to the wrong pools, so a treasure opened empty (2026-10-31). An unopened item or companion node holding no cards re-rolls on entry too (tested in game 2026-10-31: quitting and continuing into the empty treasure re-rolled it with cards). A re-rolled node's own cards go back into the deck first, since it was never opened: before that, a treasure whose deck ran dry after it rolled threw its cards away and gave Bling, with no warning on its label (2026-10-31). A node already opened (a chest or charm with `open` set, a shop with `openCount` above 0) keeps its cards: the game saves that state, and continuing a run enters the node again, so a card arriving in between gave a free re-roll and reset the shop's purchases (found reviewing save/reload, 2026-10-31). A stand-in keeps the map icon of the node it replaced (the user found Bling icons that turned into rewards confusing), and its linked partner (the populator sets up one node of a linked pair and `CopyData`s it to the other) becomes Bling too: before that fix the partner kept its reward type with Bling data, and the continue screen threw `KeyNotFoundException: 'cards'`. Saves from before the fix are repaired when nodes load. Hovering a stand-in adds "No <kind> left: Bling" to its map label while entering it would give Bling (the user asked for the warning before the click, on the label rather than a pop-up). The overlay repeats it on entry. Pools refill once per run at most: vanilla reshuffles a pool once it is drawn empty, which with 3 cards meant every node offered the same 3 (seen 2026-10-30). Under AP each card is offered at most once per run, like vanilla in practice. Modifier pools refill as usual. Small pools needed three more guards, all found in testing on 2026-10-30:
+- `Pool.Pull` and `GetFromOriginalList` loop until they have the requested number of distinct cards, so a shop asking for 3 charms out of 0 hangs the run start. Requests are capped at the number of drawable cards.
+- The boss "random charm" reward indexes an empty draw; that reward is dropped.
+- Tribe select removes locked classes by object identity, so `GetLockedClasses` returns every loaded instance of a locked tribe.
+
+**Starting tribe (decided by the user 2026-10-31; built and unit tested, not yet tested in game):** all three tribes are items (`tribe:Basic` "Snowdwellers" is ID 102). The `starting_tribe` option (Snowdwellers, Shademancers, Clunkmasters; default random, the user's choice) puts one in the starting inventory and leaves it out of the pool, and slot_data `starting_tribe` names it. Logic now gates Snowdweller battles, the Snowdweller win, One Punch, Block 10 hits with Clunkers (Woodhead) and Snowdweller cards behind the Snowdwellers item like the other tribes. The client locks Basic at tribe select until `tribe:Basic` arrives, but only for seeds whose slot_data has `starting_tribe` (older seeds have no such item).
+
+**Card logic for challenges (decided by the user 2026-10-31; built and unit tested, `rules.CardRules`):** a challenge that needs particular cards needs the pack holding one of them in this seed (packs are shuffled per seed, so the rule is built from `pack_contents`) and the tribe item of that card's clan. Tough Nut: a Shell card (Kernel, Shelly, Shell Shield, Shellbo). Rampage: Blaze Bom, Tiny Tyko or Mini Mika. Icemaster: Ice Dice or Blunky. Ritual: Shademancers and two of Snuffer Mask, Yeti Skull, Azul Skull, Chikichi, The Baker, Groff. Kill 10 with Teeth: the Spike Pet (now progression), or Shademancers and Tiger Skull, Tigris Mask, Taiga or Tusk. Toxic: two of Shroominator, Fulbert, Fungun, Wort, Hongo's Hammer, Spore Pack and Fungo Blaster (two, the user's call 2026-10-31). Add 3 Clunkers: a pool Clunker. Block 10 hits with Clunkers: nothing, since Woodhead starts in every Snowdweller deck (the user's call). Add 10 Scrap: Clunkmasters and a General or Clunkmaster Clunker. Summon 50 allies: Shademancers. One Punch: a Snowdweller 0-bell win (it was any clan). Gnomebringer and the three tribe wins already had the 0-bell win kit.
+
+**The True Final Boss is a location only for the goals that need it (decided 2026-10-30).** Tier 8's "Final Final Boss" (shown as "True Final Boss") is only fought with 10 storm points of bells, so its three per-tribe checks exist only on the True Final Boss and Overcranked goals, and need 6 Progressive Storm Bells. A normal win ends after tier 7's "Final Boss". That last battle's win ends the campaign before `OnBattleWin` fires, so the client sends it from `OnCampaignEnd`. A battle continued from a save skips `PreBattleSetUp`, so the battle node then comes from `Campaign.FindCharacterNode(References.Player)` (found 2026-10-31: such a win sent no check).
+
+## 2. Core design: what counts as a location and what counts as an item
+
+Wildfrost is a roguelike with town metaprogression. That gives a natural split:
+- **Items** are the metaprogression you normally earn in Snowdwell: unlocks, tribes, buildings, plus run-scoped goodies.
+- **Locations** are things you accomplish during runs. Each one only needs to happen once, across any number of runs.
+
+### Locations (candidates)
+
+| Group | Example names | Game hook (from `Assembly-CSharp`) |
+|---|---|---|
+| Battles won (count-based, like RoR2) | `Battle Victory 1..N` | `CampaignNodeTypeBattle` BattleEnd / `Events` |
+| Area bosses | `Defeat Area 1 Boss`, `... Area 2`, `... Area 3` | `CampaignNodeTypeBoss`, `BossRewardSelect` |
+| Final boss | `Defeat the Frost Guardian` (this is also the goal event) | `FinalBossSequenceSystem` |
+| Map nodes visited (count-based per type) | `Treasure 1..k`, `Shop Purchase 1..k`, `Frozen Traveller 1..k`, `Charm Machine`, `Muncher`, `Gnome`, `Copy Item`, `Curse Items` | `CampaignNodeType{Item,Shop,Companion,Charm,Muncher,GnomeShop,CopyItem,CurseItems,Gold,InjuredCompanion}` |
+| Town challenges (persistent) | one location per `ChallengeData` | `ChallengeProgressSystem` / `ChallengeSystem` |
+| Per-tribe wins (optional) | `Win with Snowdwellers`, `... Shademancers`, `... Clunkmasters` | Campaign result + selected class |
+| Storm bell wins (optional, a difficulty ladder) | `Win with 1..N Storm Bells` | `StormBellManager` |
+
+Count-based checks mean "the Nth time you do X, across all runs". They pace well and survive dying in a roguelike, and they're easy to scale with an option.
+
+**Decided:** checks are **per area** ("Area 2 Battle 3", "Area 1 Treasure 2", and so on), so you have to find each battle across your runs. The client counts per area and per node type, keyed by the campaign tier. The number of checks per area is an option, capped at what one area's map can actually hold.
+
+**Decided:** achievements and challenges are locations. In vanilla they are what gates certain charms, so the charms themselves become items.
+
+### Items (candidates)
+
+| Class | Items | How we apply it |
+|---|---|---|
+| Progression | Tribe/clan unlocks (`Shademancers`, `Clunkmasters`, and possibly Companion Start's clans); `Frostoscope`/Storm Bells | Drive `MetaprogressionSystem` / `UnlockData` / `ProgressSystem` |
+| Progression/Useful | **Every** card, companion, pet and charm. AP controls the whole pool, so anything not received is removed from reward pools, shops and nodes. | `UnlockData`, `CharacterRewards`/`RewardPool` |
+| Optional (`leader_randomization`) | Leader types. Off by default, because locking all but one leader from the start is very restrictive. | Leader-select filter (see `LeaderSelectionPatch` in Companion Start) |
+| Useful (run-scoped) | `Random Charm`, `Random Companion`, `Crown`, `Extra Card Reward` | Applied immediately if in a run, otherwise banked for the next run start |
+| Filler | `Bling ×N` | `PlayerGetGold` / gold add |
+| Traps (option) | `Snow Trap` (snows your hand next battle), `Curse Trap` (a curse card into the deck), `Enemy Frenzy` | Status effects / deck add at the next battle |
+
+The rule from `adding games.md` is that any item can arrive any number of times. Persistent unlocks are idempotent, so a duplicate turns into Bling. Run-scoped items stack.
+
+## 3. Client architecture (C#)
+
+Project: `WFM-Archipelago/` (a new git repo), with the same csproj and `PostBuild.ps1` pattern as Companion Start. GUID suggestion: `fuko.wildfrost.archipelago`.
+
+- **Dependency**: Archipelago.MultiClient.Net. Use its net45 or netstandard2.0 build. Its DLL (and any dependencies) is copied into the mod folder by PostBuild.
+  - The game already ships `Newtonsoft.Json.dll`, and MultiClient.Net depends on it. Check which version the game has, and bind to the game's copy rather than shipping a second one.
+- **Threading**: MultiClient.Net callbacks fire on socket threads. Push every event onto a `ConcurrentQueue` and drain it from a `MonoBehaviour.Update` on the main thread. Unity APIs must never be touched off the main thread.
+- **Connection UI**: a small panel on the main menu with host:port, slot name and password, saved in mod config. It needs:
+  - reconnect with backoff
+  - wss and ws, and editable ports (both are hard requirements in `adding games.md`)
+- **Save separation (decided)**: each AP seed or slot gets a dedicated Wildfrost save profile, plus a state file keyed by seed name and slot. Vanilla metaprogression never leaks in or out.
+- **Item sync**:
+  - Persistent unlocks are recomputed from the full `ReceivedItems` list on every connect. They're idempotent, which removes most desync bugs.
+  - Run-scoped and consumable items are applied by index. We store `lastProcessedIndex` in the state file, and index 0 means a full resync (per `network protocol.md` §Synchronizing Items).
+- **Location sync**: we keep a local set of checked locations. On connect we send the whole set (`LocationChecks` is idempotent). That covers checks made while offline.
+- **Vanilla unlock suppression**: Harmony-patch the paths that grant town unlocks, such as `TownUnlockSequence`, `GainUnlockSequence`, `StormBellUnlockSystem` and `JournalPageUnlockSystem`. Instead of unlocking, those paths send the matching location check. This patch set is the riskiest piece of reverse-engineering.
+- **Feedback**:
+  - a popup or toast for items received and sent
+  - a "found X for Player" banner on the reward screen
+  - optionally `LocationScouts` to show what a check holds before you take it, for example on shop slots
+- **Goal**: on final boss victory (with goal conditions met), send `StatusUpdate(ClientGoal)`.
+- **DeathLink (option, decided)**: send a death when the run is lost. On receive, the run ends: the leader flees the battle, with text naming who the DeathLink came from. Outside battle, queue it for the next battle start.
+- Follow the Companion Start rule that `Unload()` reverses everything `Load()` did. Disconnect the socket on unload.
+
+Companion Start compatibility: both mods can be loaded together. A later option could make "leaders" items, but that is out of scope for v1.
+
+## 4. APWorld (Python)
+
+Layout, following apquest: `__init__.py`, `world.py`, `items.py`, `locations.py`, `regions.py`, `rules.py`, `options.py`, `web_world.py`, `archipelago.json`, `docs/en_Wildfrost.md`, `docs/setup_en.md`, `test/`.
+
+- **Regions**: `Menu` → `Snowdwell` → `Area 1` → `Area 2` → `Area 3` → `Final Boss`. Regions are just containers for locations that share access rules.
+- **Logic**: Wildfrost runs are skill-based and random, so logic stays light:
+  - Tribe-specific checks require that tribe item.
+  - Storm-bell checks require `Frostoscope`.
+  - Town buildings are **not** items. They only display unlocks for specific cards and pets, and AP now owns all of those.
+  - Deeper areas require K "power" items (a count of received cards, companions and charms), so sphere 1 isn't "beat the whole game". K per area is an option.
+  - With everything locked at the start, the starting pool has to be playable. Use `start_inventory` or `push_precollected` to give a minimal starter set: the tribe's starter deck plus a few companions and items. The size of that set is an option.
+- **Restrictive start**: sphere 1 has to hold plenty of Area 1 checks, so this should be fine. Use `local_early_items` if needed.
+- **Options**:
+  - `goal`: final boss ×1, ×N wins, or win with every tribe
+  - `battle_checks_per_area` (count)
+  - `node_checks_per_type_per_area`
+  - `area_power_requirements`
+  - `starter_pool_size`
+  - `leader_randomization` (off by default)
+  - `include_challenges`
+  - `storm_bell_checks`
+  - `trap_percentage`
+  - `death_link`
+  - `starting_tribe` (Snowdwellers or random)
+- **Item IDs**: pick an unused `base_id` range. Grep `worlds/` for collisions. In practice, IDs only need to be unique within our game.
+- **slot_data**: the options the client needs, such as the goal, the check counts and deathlink.
+
+## 5. Dev environment
+
+- System Python is 3.14, but AP from source needs **3.12.10–3.13.x**. Set up a venv with `uv venv -p 3.13` (or pyenv) inside `../Archipelago/`, then run `python ModuleUpdate.py`.
+- Develop the world as `WFM-Archipelago/apworld/wildfrost/` and symlink it to `../Archipelago/worlds/wildfrost`. That keeps the clone clean.
+- Loop: `python Generate.py` (with a yaml in `Players/`) → `python MultiServer.py output/AP_*.zip` → connect the mod to `localhost:38281`.
+- Tests: `python -m pytest worlds/wildfrost` (see `docs/tests.md`). The base world tests come for free.
+
+## 6. Milestones
+
+1. **Spike (feasibility first, per `apworld_dev_faq.md`)**. *Done.* The code is in `Wildfrost Archipelago/`.
+   - Done (2026-10-29), in game: the mod loads and connects, F8 and battle wins send checks, and items come back in order. `Events.PostBattle` fires after the BattleWin scene with `areaIndex=0 tier=0 type=CampaignNodeBattle` for the first battle. The loader logs a harmless `Empty mod?` for our folder, probably because of the extra library DLL.
+   - Done (2026-10-29), headless under system Mono: MultiClient.Net 6.7.0 (net45) against the game's Newtonsoft 13.0 logged in to a local server, sent a check and received the item. Newtonsoft bound to 13.0 without help. The `AssemblyResolve` fallback in `ArchipelagoMod.cs` stays as insurance and logs if it ever fires.
+   - Server warning: "client does not support compressed websocket connections". It works for now, but track it upstream in MultiClient.Net.
+   - Load MultiClient.Net inside the game.
+   - Connect to a local server, generating with apquest's yaml and pretending to be that game.
+   - Log the items received and send one check.
+   - This proves the DLL loads under the game's Mono, the Newtonsoft binding works, and ws/wss works.
+2. **Hook survey**. *Done (2026-10-29)*; findings are in §2a: `HookSurvey.cs`, `ContentDump.cs` and `SurveyLog.cs` write `survey.log` and `content_dump.txt` to the mod folder. Findings from reading the game code:
+   - Unlock gating goes through `MetaprogressionSystem`. `GetLockedItems`, `GetLockedCompanions` and `GetLockedCharms` index into the unlock-ordered lists in `MetaprogressionSystem.data` (`"items"`, `"companions"`, `"charms"`). `GetLockedClasses`, `GetUnlockedPets` and `IsUnlocked` are the other gates. These are the takeover points for AP-controlled pools.
+   - Progress is saved under the keys `unlocked`, `townProgress`, `completedChallenges`, `challengeProgress`, `petHutUnlocks`, `inventorHutUnlocks`, `stormBellsUnlocked` and `maxStormPoints`, through `SaveSystem.Save/LoadProgressData<T>`.
+   - `SaveSystem.SetProfile(name)`, `GetProfile` and `DeleteProfile` exist, so separate AP profiles can use the game's own profile system.
+   - Most candidate locations have an `Events` hook: `OnMapNodeSelect`, `OnEventStart`, `PostBattle`, `OnMinibossIntro`, `OnShopItemPurchase`, `OnEntityChosen`, `OnUpgradeGained`, `OnChallengeCompletedSaved`, `OnTownUnlock` and `OnCampaignEnd(Result)`. `OnPullRewards` is a ref event that can rewrite reward pulls.
+   - The survey logs these:
+   - battle won
+   - boss defeated
+   - each node type entered
+   - final victory
+   - challenge completed
+   - every vanilla unlock grant
+   This confirms the location table above.
+3. **First Wildfrost world + end-to-end test**. *Built 2026-10-29. The first in-game run (2026-10-30) sent its checks and the goal. On 2026-10-30 battles became per tribe, with a profile-switch reload added, both awaiting an in-game test.* The world lives at `apworld/wildfrost/` (symlinked into `../Archipelago/worlds/wildfrost`), and its tables are generated by `tools/gen_data.py` from `data/content_dump.txt`. It has 121 locations (69 per-tribe battles and 52 challenges), 219 items, tribe-gated battles and challenges, and a run win as the goal. The client sends battle and challenge checks by slot_data key and reports the goal. Received items are only logged. World tests and AP's general tests pass, and a headless Mono login, check and receive works. The original sketch was:
+   - about 20 fixed battle-count checks
+   - Bling filler plus one real unlock (for example the Shademancer tribe)
+   - goal = final boss
+4. **Metaprogression takeover**: suppress vanilla unlocks, apply unlocks from the AP item list, and separate saves per seed.
+   *Built and tested in game 2026-10-30: profile switch, tutorial skip and hints off, tribe and card locks, Bling stand-ins with labels, re-rolls, and the run start with empty pools.*
+   - **Profile:** on login the client moves to `Archipelago_<slot>_<seed>` at the main menu (`ApMode`, through `ProfileSwitch`). On a new profile, the game's version-compatibility check runs first, because left alone it treats the version-less profile as ancient and resets it later. Then the tutorial is marked done. The choice isn't saved, so a game start without the server, or without the mod, stays on the player's own profile. Unloading the mod at the main menu switches back.
+   - **Scope:** the patches (`ApPatches`), battle and challenge checks, and the goal only act while the AP profile is loaded. Play on Default sends nothing.
+   - **Cards:** `GetLockedItems/Companions/Charms` return every card of that kind not received yet (`card_kinds` in slot_data, and a pack unlocks its `packs` entry). `RemoveLockedCards` uses them at run start and on continue. A card received mid-run is added to the current run's pools if this tribe draws it.
+   - **Tribes:** `GetLockedClasses` and the `BattleLockData` locks follow the tribe items.
+   - **Pets:** `GetUnlockedPets` follows the pet items (Wolfie is always there).
+   - **Unlock list:** `GetUnlockedList` drops saved Tribe, Event, Pet, Item, Companion and Charm unlocks. It adds every building and journal page, and the vanilla unlock names of what was received, which covers the special map events.
+   - **Challenges:** they are unchained by clearing `ChallengeData.requires` in memory before ChallengeSystem reloads; unload restores them. Their rewards still land in `unlocked`, but that is ignored, and they are stripped from `townNew` so no pop-ups play.
+   - **Catch-up:** on login, every challenge completed in the profile's save is sent again, and the server ignores duplicates.
+   - **Offline checks** persist in `pending/<profile>.txt` in the mod folder.
+   - **Received items** are queued raw and mapped to keys on the main thread after login. Items often arrive before slot_data is read, and the first version dropped those.
+   - **Tutorial hints:** the in-battle hint systems (redraw bell, aimless and reaction enemies, wave bell, charms, crowns, injuries) count per profile, so a fresh AP profile showed them again. They are created with the run, not at the main menu, so their `OnEnable` is skipped while the AP profile is loaded.
+   - **Town Progress:** the end-of-run panel names each completed challenge's vanilla reward; under AP it says "Archipelago check sent" instead.
+   - **Town challenge stones (decided with the user 2026-10-31; tested in game 2026-10-31):** the stones stay in town as the list of checks still to do. The slot under a stone shows what the multiworld has given, which is no longer tied to the challenge. A completed challenge's stone stays, saying "Check sent" (`ChallengeDisplayCreator.Check` postfix), where vanilla removes it. Stones don't say what a check sends; AP games usually only reveal that for purchases. The miner (`IcebreakerHutSequence`) has three challenges but one stone, picked by how many of its rewards are unlocked, so under AP all three show, stacked upward. The charm shrine's stones (`ChallengeStone`) keep vanilla's look, opening with the charm AP has given (the user wants that kept). A stone whose challenge is done and is a check also gets the "Check sent" banner, from a `ChallengeDisplayCreator`'s banner prefab, at half size in the snow below the ground line and outside the stone's layout (the first try lifted the stones off the ground). The shrine is a world-space canvas whose stones are laid out after `OnEnable` and move afterwards, so each banner re-pins itself every frame under its stone's lowest block (`OnGround`). Tested in game 2026-10-31.
+   - **Debugging:** F11 logs the AP state. Run start logs the reward pool sizes. The overlay keeps 300 lines and scrolls.
+5. **Full content**: every location group, every item, options, logic, traps and DeathLink.
+    - **Goal option (decided by the user 2026-10-30; built, awaiting an in-game test):** `goal` is Win Each Clan (default), True Final Boss Each Clan, or Overcranked Each Clan. In the world each clan has a "Victory (<clan>)" event that needs its tribe item and 0, 6 or 7 bells, and the seed is done with all three. The client sends the goal once each clan has a qualifying win, saved in the profile's `apGoalClans`. A True Final Boss win is the campaign's `trueWin` flag. Overcranked is the `stormPointOvercrank` save flag during the run.
+    - **Progressive Storm Bell (decided by the user 2026-10-30; tested in game 2026-10-30: 6 bells give 10 points, the 7th shows the Overcrank lever):** surveyed in `StormBellUnlockSystem` and `StormBellManager`. Vanilla: the first win sets `stormBellsUnlocked` with `maxStormPoints` 5, and each win with the active bells at the cap adds 1, up to 10 (`TrueFinalBossPointThreshold`; "10 bells" means 10 storm points). Overcrank's lever only appears once every bell is gilded (`goldHardModeModifiers`, gilded by True Final Boss wins), and it switches on every bell. Under AP there are 7 copies, plus `extra_storm_bells`: the 1st unlocks at 5 points, copies 2 to 6 raise the cap to 10, and the 7th shows the Overcrank lever. Copies are counted by item index, because a reconnect resends every item. The client writes the save keys, and `StormBellUnlockSystem.CampaignEnd` is skipped under AP, which also skips gilding.
+    - **Force Storm Bells (decided by the user 2026-10-30; tested in game 2026-10-30, both the leader block and the run-start backstop):** the `force_storm_bells` option. Without it nothing rewards playing the middle bell levels. With it on, `CharacterSelectScreen.ContinueRoutine` refuses to start a run until the rung bells (`StormBellManager.GetCurrentStormPoints`) reach the current limit, and shows the game's prompt box. The user chose to block the run start rather than top up random bells, every run at the limit rather than only until a win at it, and no extra per-level checks. First test (2026-10-30): the block worked, but it ran after the selection screen had closed the pet picker, and Back has no step for that state, so the screen got stuck. Now the main block is on picking a leader (`CharacterSelectScreen.Continue` before the pet picker opens, as the user suggested), and the run-start check only remains as a backstop, which reopens the pet picker. (A check at `Menu.StartGame` was tried and removed: the bells are set on the selection screen itself, so it blocked before they could be set.)
+    - **Force Overcrank (decided by the user 2026-10-31; built, not yet tested in game):** the `force_overcrank` option, off by default. Force Storm Bells only forces up to 10 storm points and never Overcrank; the lever is there once the 7th bell arrives, and pulling it is the player's choice. With `force_overcrank` on and the 7th bell received, the same leader-pick and run-start checks also require the lever (`stormPointOvercrank`). It works with or without Force Storm Bells.
+    - **Logic: deck strength (decided by the user 2026-10-30; built, world tests pass):** fights 1-5 of a run (tiers 0-4) need nothing. From the second boss (tier 5) on, including the Final Boss and the "win a run" challenges and victories, a clan needs 1 companion pack plus (1 item pack or 2 charm packs). The True Final Boss needs 2 companion, 2 item and 1 charm pack plus 6 bells. An Overcranked victory needs 2 companion, 3 item and 2 charm packs plus 7 bells. Packs count per clan: General plus the clan's own. Packs became progression items for this. Leaders as items are shelved (user, 2026-10-30).
+    - **DeathLink (tested in game 2026-10-30: receiving in battle and on the map, and sending on a lost run):** the standard `death_link` option, sent in slot_data. A received death (`DeathLinkHandler`) shows the game's prompt box ("DeathLink from <sender>: <cause> <leader> flees!"). In a battle (Play or Battle phase), `Battle.EnemyWin()` loses it, which ends the run the normal way. On the map (active scene `MapNew`, no scene jobs), the run ends the way `Battle.Run` ends a lost one: `Campaign.End(Lose)`, `JournalNameHistory.MostRecentNameKilled()`, then the `CampaignEnd` scene. The user asked for this so a death between battles doesn't make them click through rewards first. In a shop or event, the death waits for the map or a battle. The `CampaignEnd` defeat screen tells a win from a loss by `References.Battle.winner`, so on the map it gets an inactive stand-in Battle whose winner isn't the player, removed once the screen unloads. Outside a run it is ignored. A lost run sends a death, unless the loss was a received one. The client ignores its own bounced deaths. Test tools (session scratchpad, not in the repo): `SendDeath.exe` logs in as the Quester slot and sends one, and `ListenDeath.exe` prints the deaths it receives.
+    - **Traps and boons (ideas from the user 2026-10-30; built and tested in game 2026-10-31; Slapcrackers' hits are 0.75 s apart, matched to the card by the user):** Bling now gives 25-50 Bling. `trap_percentage` (default 0) turns that share of the filler into traps; the rest is Bling and the boons. The client (`ApEffects`) tells copies apart by item index and saves the highest index handled and the effects still waiting in the profile. Bling changes apply on the run's map (`Character.GainGold`/`SpendGold`), followed by `Campaign.PromptSave`: the run's Bling is only saved at the game's save points while the pending list is saved at once, so before that change quitting first lost the Bling (found reviewing save/reload, 2026-10-31). Battle effects wait for the player's turn (`Battle.Phase.Play`, empty `ActionQueue`) and run as an `ActionSequence`. Each ends with the game's own `Battle.UpdateBoard` for both sides (private, called by reflection), since the game only moves units up into empty slots at turn end: a Slapcrackers kill left a gap until the next card (found 2026-10-31). They use `Hit` with no attacker and no retaliation (Slapcrackers), `hp` changes (Berry Bell, Pinkberry), `StatusEffectSystem.Apply` (status types "demonize", "teeth"), and `Entity.Kill` (never Boss, BossSmall, Miniboss or Leader cards). The ideas as given: traps: lose Bling; Slapcrackers on one of your rows (1 damage x4, aimless) in the current or next fight; Berry Bell on a random enemy row (+1 HP and max HP); Demonize a friendly unit; give an enemy 1 Teeth. Boons: gain Bling; Slapcrackers on the enemy side; Pinkberry Juice on a random unit (+4 HP and max HP for the fight); kill an enemy unit (not a boss or miniboss); Demonize an enemy unit.
+6. **Polish and release**:
+   - *Built 2026-10-31; tested in game: the connect popup (error status, Connect and carrying on into the game), the debug gate, and the one-line connection errors. The chat line is not confirmed yet:* the settings moved into the game's per-mod `config.cfg` (`[ConfigItem]` fields; `connection.txt` is migrated once). A `debug` setting, off by default, gates F8, F10, the survey log and the content dump. Pressing Play with no slot loaded opens a connect popup (server, slot and password; Connect; Play without Archipelago, which hides the overlay until the main menu loads again). Connecting switches profile on the main menu and then carries on with the same Play. The base game has no settings UI for mods (the Mods screen only has Workshop, folder and enable buttons). Enter on the overlay opens a line: `!` commands and chat go to the server (`session.Say`), and `/connect`, `/disconnect` and `/help` are local. Typing blocks the game's InputSystem, restoring it only if it was on.
+   - in-game UI for sends, receives and hints. *Decided with the user 2026-10-31; tested in game (`ApUi`): toasts, pill, hint panel (top right, left of the game's buttons, toasts move below it while it's open), and the log (18% of the screen wide, down to 70% of the height, 80% opaque). The trap and boon prompt box is 7 wide so long texts aren't cut off, and prompt texts avoid "+": the game's prompt dropped everything from "+4" on (seen 2026-10-31):* toasts at the top right for items received and checks sent (not chat or other players' finds). Every check sent gets one toast (asked for by the user 2026-10-31): a check that found another player's item names it and them, one that found our own item is covered by its received toast, and any other check (no item message within 2 s) shows "Check sent" with the location. A status pill at the top left shows connection state and unread log lines; clicking it, F7 or Enter opens the full log, which now starts closed. A hint panel on H lists your items and the items you hold for others (`session.Hints.TrackHints`). It is built in uGUI with the game's most-used TextMeshPro font. Received-item toasts remember the highest item index shown (`apToastSeen` in the AP profile), because the server resends every item on connect. *Map check markers (asked for by the user 2026-10-31; built, not yet tested in game, `CheckMarker`):* a battle node whose check for this run's tribe isn't sent gets an orange dot (the toast check colour, light rim) at the top right of its sprites, and its hover label adds "Check not sent yet" or "Check sent". Nothing shows before the client knows (offline before the first connect) or for battles that aren't locations.
+   - docs (`en_Wildfrost.md`, `setup_en.md`)
+   - packaging the `.apworld` with the "Build APWorlds" launcher component. *Done 2026-10-31:* `dist/wildfrost.apworld` (world_version 0.1.0). A seed generated from the packaged file alone, with the source folder moved out of `worlds/`.
+   - *Compatibility check (decided by the user 2026-10-31: warn, never lock; built, not yet tested in game, `CompatCheck`):* on every Play with the AP profile loaded (the user's call: mods can be switched on and off on the Mods screen after connecting), skipped when nothing changed since the last check, the log lists the other loaded mods (`Bootstrap.Mods`), then any cards in the tribes' Item/Unit/Charm reward pools that aren't in the seed (runs offer those from the start), tribes beyond the vanilla ones (their runs send nothing), pets with an unlock the seed doesn't have (they stay locked), and game methods another mod patches too (Harmony owners besides ours). If anything was found, one toast points to the log.
+   - *Daily Voyages off under AP (asked for by the user 2026-10-31; tested in game 2026-10-31, the block; challenge progress inside a daily run that got through anyway is accepted as is):* the balloon's Daily Voyage plays a fixed deck and tribe of the day outside the multiworld's items, so selecting the balloon (`BuildingBalloon.Select`) on the AP profile shows a prompt instead of starting or continuing one. As a backstop, battle and run wins in a `GameModeDaily` campaign send no checks.
+   - releasing the mod on the Workshop. *Prepared 2026-10-31:* the shipped folder is the mod DLL, the client library, the icon (the Archipelago logo with the game's Noomlin peeking over it, assembled from its Body, Ear and Face sprites; chosen by the user 2026-10-31), `wildfrost.apworld` and the `Source` mirror (the user wants source shipped). `tools/prepare_release.py` cleans the deployed folder before publishing. The Source mirror had been empty because `$(SolutionDir)` was undefined when building the .csproj directly. The apworld also goes on GitHub (https://github.com/martin-servold/WFM-Archipelago). **Overlay log (gone through with the user 2026-10-31):** `ArchipelagoClient.LogDebug` shows a line in the overlay only with `debug=true` (Player.log always). Debug-only: the run reward pool sizes and rebuilds, node re-rolls, the Bling stand-in notices (the map label's subtitle covers them), vase piece placements, the profile switch line (the AP rules summary covers it), a missing status effect, "No other mods loaded", and the server's tag-change, tutorial and compressed-websocket notices. **Before shipping:** rebuild `dist/wildfrost.apworld`, since the player docs changed after the last build.
+
+## 7. Risks
+
+- **Unlock internals**: unlock state may be scattered (ProgressSaveData, building states, journal). Milestone 2 de-risks this.
+- **Mono TLS for wss://** (archipelago.gg rooms). *Resolved 2026-10-31:* the game (Windows build under Proton) connected to `wss://archipelago.gg:<port>` with MultiClient.Net 6.7.0 as is.
+- **Websocket compression.** archipelago.gg warns that the client "does not support compressed websocket connections" and that this "may stop working in the future". *Checked 2026-10-31:* only the net6.0 build of MultiClient.Net (6.7.1 is the latest) turns compression on (`ClientWebSocket` with `DangerousDeflateOptions`), and the game's Mono can't load net6.0. The net45 and netstandard2.0 builds use `ClientWebSocket` without it, and Mono's `ClientWebSocket` has no deflate support anyway. The net35 and net40 builds bundle websocket-sharp, which can do permessage-deflate but doesn't have it turned on. For now the server only warns. If it starts refusing, the options are: ask upstream to turn on websocket-sharp's compression in the net35/net40 builds and switch to one of those (they would need a load test in the game), or bring in a websocket library that supports it.
+- **Mid-battle item receipt**: queue run-scoped items until the next safe moment (map screen or battle start).
+- **Count-based checks feel grindy** if the counts are too high. Make every count an option with sensible defaults.
