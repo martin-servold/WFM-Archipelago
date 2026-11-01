@@ -4,7 +4,8 @@ The Mods screen's Workshop button uploads the mod's folder as it is, so this rem
 development and local play leave there: the survey log, the content dump, the old connection.txt
 copy, config.cfg with the player's own server and settings, and an empty offline check queue folder. The game writes a fresh config.cfg
 with the defaults the next time it loads the mod. What stays: the mod DLL, the client library, the
-icon, wildfrost.apworld and the Source mirror (all put there by PostBuild).
+icon, wildfrost.apworld, NOTICE.md with the licenses folder and the Source mirror (all put there by
+PostBuild), and the Mod Uploader's tags.txt if there is one.
 
 Run after building, close the game first if you want the folder to stay clean until you publish:
     python3 -I tools/prepare_release.py
@@ -15,7 +16,10 @@ from pathlib import Path
 
 MOD_DIR = Path.home() / ".local/share/Steam/steamapps/common/Wildfrost/Modded/Wildfrost_Data/StreamingAssets/Mods/archipelago"
 REMOVE = ["survey.log", "content_dump.txt", "connection.txt.old", "connection.txt", "config.cfg"]
-EXPECTED = {"WildfrostArchipelago.dll", "Archipelago.MultiClient.Net.dll", "icon.png", "wildfrost.apworld", "Source"}
+EXPECTED = {"WildfrostArchipelago.dll", "Archipelago.MultiClient.Net.dll", "icon.png", "wildfrost.apworld", "Source",
+            "NOTICE.md", "licenses"}
+# Written by the Mod Uploader mod: the Workshop tags, one per line.
+OPTIONAL = {"tags.txt"}
 
 
 def main() -> int:
@@ -42,7 +46,7 @@ def main() -> int:
         print("removed pending (empty)")
 
     present = {p.name for p in MOD_DIR.iterdir()}
-    missing, extra = EXPECTED - present, present - EXPECTED
+    missing, extra = EXPECTED - present, present - EXPECTED - OPTIONAL
     for name in sorted(missing):
         print("MISSING", name, "(build the mod, and put the apworld in dist/ first)")
     for name in sorted(extra):

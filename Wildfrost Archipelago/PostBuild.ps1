@@ -29,6 +29,13 @@ Get-ChildItem -Path $LibDir -Filter *.dll | ForEach-Object {
     Move-Item -Path "$libDest.tmp" -Destination $libDest -Force
 }
 
+# The notices for what the mod ships that isn't this project's own (the client library, the icon's
+# artwork), so they travel with the files they cover.
+Copy-Item -Path (Join-Path $SolutionDir "NOTICE.md") -Destination $ModRoot -Force
+$licensesDest = Join-Path $ModRoot "licenses"
+New-Item -ItemType Directory -Force -Path $licensesDest | Out-Null
+Copy-Item -Path (Join-Path $SolutionDir "licenses/*") -Destination $licensesDest -Force
+
 # Mirrors the whole solution (.sln plus the project folder) into the mod's Source
 # subfolder so it always matches what was just built, without bin/obj/.vs churn or
 # stale files left over from earlier ad-hoc copies.

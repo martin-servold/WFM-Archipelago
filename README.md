@@ -94,4 +94,5 @@ content dump the mod writes with `debug=true`. The dump comes from the game and 
 
 ## License
 
-[CC0 1.0](LICENSE)
+This project's own code and docs are [CC0 1.0](LICENSE). The bundled Archipelago.MultiClient.Net library and the
+icon's artwork (Wildfrost's Noomlin and the Archipelago logo) keep their own terms: see [NOTICE.md](NOTICE.md).
