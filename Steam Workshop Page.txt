@@ -6,7 +6,7 @@ Your normal save is never touched: each seed plays on a save profile of its own.
 [h2]What you need[/h2]
 [list]
 [*]Wildfrost, started in its Modded mode, with this mod enabled on the Mods screen
-[*][url=https://github.com/ArchipelagoMW/Archipelago/releases]Archipelago[/url] 0.6.9 or newer, to generate a seed
+[*][url=https://github.com/ArchipelagoMW/Archipelago/releases]Archipelago[/url] 0.6.8 or newer, to generate a seed
 [/list]
 
 [h2]1. Install the APWorld[/h2]
