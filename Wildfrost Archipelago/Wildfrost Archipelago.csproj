@@ -389,6 +389,7 @@
     <Compile Include="ApMode.cs" />
     <Compile Include="ApEffects.cs" />
     <Compile Include="ApPatches.cs" />
+    <Compile Include="ApTracker.cs" />
     <Compile Include="ApUi.cs" />
     <Compile Include="ArchipelagoClient.cs" />
     <Compile Include="ArchipelagoMod.cs" />
@@ -398,7 +399,9 @@
     <Compile Include="ConnectPopup.cs" />
     <Compile Include="ContentDump.cs" />
     <Compile Include="DeathLinkHandler.cs" />
+    <Compile Include="GameSpeed.cs" />
     <Compile Include="HookSurvey.cs" />
+    <Compile Include="LeaderReroll.cs" />
     <Compile Include="LogText.cs" />
     <Compile Include="LocationHooks.cs" />
     <Compile Include="ProfileSwitch.cs" />

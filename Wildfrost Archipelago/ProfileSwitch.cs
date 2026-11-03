@@ -44,11 +44,7 @@ namespace WildfrostArchipelago
             {
                 // ChallengeSystem.OnEnable adds one of these per active custom-check challenge, and
                 // OnDisable doesn't remove them, so the old profile's would stay and double up.
-                if (system is ChallengeListenerSystem)
-                {
-                    UnityEngine.Object.Destroy(system);
-                    continue;
-                }
+                if (system is ChallengeListenerSystem) UnityEngine.Object.Destroy(system);
             }
             foreach (var system in UnityEngine.Object.FindObjectsOfType<GameSystem>())
             {

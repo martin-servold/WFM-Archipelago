@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Item, ItemClassification
 
-from .data import CARDS, ITEMS, PACK_SIZE
+from .data import CARDS, ITEMS
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
@@ -24,10 +24,16 @@ def filler_name(world: WildfrostWorld) -> str:
     if world.random.randint(1, 100) <= world.options.trap_percentage.value:
         return world.random.choice(TRAP_NAMES)
     return world.random.choice(FILLER_NAMES)
+
+
 STORM_BELL = "Progressive Storm Bell"
-# Pets are useful, except where logic counts one: Spike's Teeth for "Kill 10 enemies with Teeth".
+# Pets are useful, except where logic counts one: Spike's Teeth for "Kill 10 enemies with Teeth",
+# Loki's Demonize for "Kill 3 Demonized enemies", and Sneezle's draw for "Hoarder". Every seed starts with a random pet (world.generate_early),
+# so "Best Friends" needs no rule for one.
 SPIKE_PET = "Spike Pet"
-PROGRESSION_PETS = {SPIKE_PET}
+LOKI_PET = "Loki Pet"
+SNEEZLE_PET = "Sneezle Pet"
+PROGRESSION_PETS = {SPIKE_PET, LOKI_PET, SNEEZLE_PET}
 # Unlock the bells (5 storm points), raise the cap to 6, 7, 8, 9 and 10, Overcrank.
 STORM_BELL_LEVELS = 7
 
@@ -38,8 +44,9 @@ CLASSIFICATION_BY_KIND = {
     "Pet": ItemClassification.useful,
     # Bell levels gate the True Final Boss and the harder goals.
     "StormBell": ItemClassification.progression,
-    # Packs are deck strength: the second boss onwards needs some (rules.py).
+    # Packs and charms are deck strength: the second boss onwards needs some (rules.py).
     "Pack": ItemClassification.progression,
+    "Charm": ItemClassification.progression,
     "Filler": ItemClassification.filler,
     "Trap": ItemClassification.trap,
 }
@@ -84,13 +91,16 @@ def starting_tribe(world: WildfrostWorld) -> str:
     return STARTING_TRIBES[world.options.starting_tribe.value]
 
 
+PET_NAMES = [name for name, kind in KIND_BY_NAME.items() if kind == "Pet"]
+
+
 def create_all_items(world: WildfrostWorld) -> None:
-    # No card is unlocked from the start: every card arrives in a pack. The starting tribe is in the
-    # starting inventory (world.generate_early), so it's left out here.
-    start = starting_tribe(world)
+    # No card is unlocked from the start: every card arrives in a pack. The starting tribe and pet are
+    # in the starting inventory (world.generate_early), so they're left out here.
+    start = {starting_tribe(world), world.starting_pet}
     itempool: list[Item] = [
         world.create_item(name) for name, kind in KIND_BY_NAME.items()
-        if kind in ("Tribe", "Event", "Pet", "Pack") and name != start
+        if kind in ("Tribe", "Event", "Pet", "Pack", "Charm") and name not in start
     ]
     itempool += [world.create_item(STORM_BELL) for _ in range(STORM_BELL_LEVELS + world.options.extra_storm_bells.value)]
     free = len(world.multiworld.get_unfilled_locations(world.player)) - len(itempool)

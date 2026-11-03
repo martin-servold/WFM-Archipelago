@@ -17,8 +17,13 @@ OUT = ROOT / "apworld" / "wildfrost" / "data.py"
 AREA_OF_TIER = {0: 0, 1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2}
 BOSS_TIERS = {2, 5, 7, 8}
 # Challenge Charm 14 is "Win a Daily Voyage": daily runs are a different game mode, dropped.
-# Challenge Charm 16 is "True Win" (Heart of the Storm): reachability not understood yet.
-EXCLUDED_CHALLENGES = {"Challenge Charm 14", "Challenge Charm 16"}
+EXCLUDED_CHALLENGES = {"Challenge Charm 14"}
+# Two checks (decided by the user 2026-11-02): every boss, and every challenge that unlocks a charm in
+# vanilla (first Bigger Hitter, One Punch, Charmless and Sunbringer, then all of them, for filler
+# room). The second is "<key>#2", "<name> #2", with the same info, so it shares the first's area and
+# rule; the client sends both together.
+def doubled_challenge(internal: str) -> bool:
+    return internal.startswith("Challenge Charm ")
 # Tier 8's "Final Final Boss" is the True Final Boss, only fought with 10 storm points of bells.
 # Its checks only exist for the goals that need it (the world drops them otherwise).
 TRUE_FINAL_BATTLES = {"Final Final Boss": "True Final Boss"}
@@ -41,9 +46,12 @@ CLAN_OF_POOL = {"General": "General", "Snow": "General", "Basic": "Basic", "Magi
 CLAN_LABEL = {"General": "General", "Basic": "Snowdweller", "Magic": "Shademancer", "Clunk": "Clunkmaster"}
 
 # ID ranges. Locations and items have separate ID spaces.
-LOC_BATTLE, LOC_CHALLENGE = 1000, 2000
+LOC_BATTLE, LOC_CHALLENGE, LOC_SECOND = 1000, 2000, 3000
 ITEM_TRIBE, ITEM_EVENT, ITEM_PET, ITEM_BELL, ITEM_PACK, ITEM_FILLER = 100, 200, 300, 400, 3000, 9000
 ITEM_TRAP, ITEM_BOON = 9100, 9200
+# Charms are items one by one, not in packs (decided by the user 2026-11-02): a charm pack brought
+# three at once, which made early runs charm-heavy. Companions and items stay in packs.
+ITEM_CHARM = 5000
 
 # Filler with an effect (decided by the user 2026-10-31). "Bling" gives 25-50 Bling. Battle effects
 # wait for the next battle of a run.
@@ -122,8 +130,9 @@ def main():
             for n in m.group(3).split(", "):
                 cards.setdefault(n, (m.group(2), m.group(1)))
 
-    # Wolfie maps to no unlock (always available), so it doesn't match and isn't an item.
-    pets = [m.group(1) for m in re.finditer(r"^  (\w+) -> (\S.*)$", section(text, "Pets"), re.M)]
+    # Every pet, Wolfie (Snoof) too: it has no unlock (always available in vanilla), and became a pet
+    # item like the others (the user's call, 2026-11-02); the client locks it.
+    pets = [m.group(1) for m in re.finditer(r"^  (\w+) ->", section(text, "Pets"), re.M)]
 
     old_loc, old_item = {}, {}
     if OUT.exists():
@@ -148,6 +157,8 @@ def main():
 
     battle_ids = assign([b[0] for b in battles], old_loc, LOC_BATTLE)
     challenge_ids = assign([c[0] for c in challenges], old_loc, LOC_CHALLENGE)
+    seconds = [b[0] for b in battles if b[3]] + [c[0] for c in challenges if doubled_challenge(c[2])]
+    second_ids = assign([k + "#2" for k in seconds], old_loc, LOC_SECOND)
 
     tribe_keys = [f"tribe:{t}" for t in RUN_TRIBES]
     event_keys = [f"event:{e}" for e in EVENT_NODES]
@@ -159,9 +170,10 @@ def main():
         kind, pool = cards[k[5:]]
         clan = CLAN_OF_POOL[re.match(r"(General|Snow|Basic|Magic|Clunk)", pool).group(1)]
         card_rows.append((k, titles[k[5:]], {"kind": kind_label[kind], "clan": clan, "pool": pool}))
+    charm_keys = [f"charm:{i['clan']}:{k[5:]}" for k, _, i in card_rows if i["kind"] == "Charm"]
     pack_keys = []
     for clan in CLAN_LABEL:
-        for kind in ("Item", "Companion", "Charm"):
+        for kind in ("Item", "Companion"):
             n = sum(1 for _, _, i in card_rows if i["clan"] == clan and i["kind"] == kind)
             pack_keys += [f"pack:{clan}:{kind}:{i + 1}" for i in range(-(-n // PACK_SIZE))]
     item_ids = {}
@@ -169,6 +181,7 @@ def main():
     item_ids.update(assign(event_keys, old_item, ITEM_EVENT))
     item_ids.update(assign(pet_keys, old_item, ITEM_PET))
     item_ids.update(assign(pack_keys, old_item, ITEM_PACK))
+    item_ids.update(assign(charm_keys, old_item, ITEM_CHARM))
     item_ids.update(assign(["storm_bell"], old_item, ITEM_BELL))
     item_ids["bling"] = old_item.get("bling", ITEM_FILLER)
     item_ids.update(assign(list(TRAPS), old_item, ITEM_TRAP))
@@ -177,12 +190,18 @@ def main():
     locations = [(k, n, battle_ids[k], {"area": a, "boss": boss, "tribe": t, "run_tribe": rt, "true_final": tf, "tier": tier})
                  for k, n, a, boss, t, rt, tf, tier in battles]
     locations += [(k, n, challenge_ids[k], {"internal": i, "text": d}) for k, n, i, d in challenges]
+    locations += [(k + "#2", n + " #2", second_ids[k + "#2"], {**info, "second": True})
+                  for k, n, _, info in list(locations) if k in seconds]
     items = [(k, RUN_TRIBES[k.split(":")[1]], item_ids[k], {"kind": "Tribe"}) for k in tribe_keys]
     items += [(k, EVENT_NODES[k.split(":")[1]], item_ids[k], {"kind": "Event"}) for k in event_keys]
     items += [(k, f"{titles.get(k[4:], k[4:])} Pet", item_ids[k], {"kind": "Pet"}) for k in pet_keys]
     for k in pack_keys:
         _, clan, kind, n = k.split(":")
         items.append((k, f"{CLAN_LABEL[clan]} {kind} Pack {n}", item_ids[k], {"kind": "Pack", "clan": clan, "card_kind": kind}))
+    title_of = {k: n for k, n, _ in card_rows}
+    for k in charm_keys:
+        _, clan, card = k.split(":")
+        items.append((k, title_of[f"card:{card}"], item_ids[k], {"kind": "Charm", "clan": clan, "card": f"card:{card}"}))
     # One copy per bell level: unlocks the bells (5 storm points), raises the cap to 10, Overcrank.
     items.append(("storm_bell", "Progressive Storm Bell", item_ids["storm_bell"], {"kind": "StormBell"}))
     items.append(("bling", "Bling", item_ids["bling"], {"kind": "Filler"}))

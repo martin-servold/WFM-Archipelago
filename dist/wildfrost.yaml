@@ -1,9 +1,13 @@
-name: Fuko
+name: Player1
 game: Wildfrost
 Wildfrost:
   goal: true_final_boss_each_clan
+  clans_required: 1
   starting_tribe: random
-  force_storm_bells: true
+  extra_storm_bells: 1
+  force_storm_bells: false
   force_overcrank: false
+  trap_percentage: 10
+  game_speed_up: false
+  leader_reroll: true
   death_link: false
-  trap_percentage: 15

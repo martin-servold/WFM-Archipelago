@@ -282,6 +282,8 @@ namespace WildfrostArchipelago
 
         private static void LogLocked(string what, IEnumerable values)
         {
+            // These patches stay applied with debug off; skip building the line then.
+            if (!ArchipelagoMod.DebugMode) return;
             string joined = values == null ? "null" : string.Join(", ", values.Cast<object>().Select(SurveyLog.Name));
             if (lastLocked.TryGetValue(what, out string prev) && prev == joined) return;
             lastLocked[what] = joined;

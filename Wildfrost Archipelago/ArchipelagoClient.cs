@@ -175,8 +175,15 @@ namespace WildfrostArchipelago
         private volatile Dictionary<string, List<string>> packs;
         private volatile string seed;
         private volatile int goal;
+        private volatile int clansRequired = 3;
+        private volatile List<BellKit> bellKits;
+        private volatile Dictionary<string, JToken> locationRules;
+        private volatile Dictionary<string, string> locationNames;
+        private volatile Dictionary<string, string> itemNames;
         private volatile bool forceStormBells;
         private volatile bool forceOvercrank;
+        private volatile bool gameSpeedUp;
+        private volatile bool leaderReroll;
         private volatile bool snowdwellersIsItem;
         private volatile bool deathLinkOn;
         private DeathLinkService deathLink;
@@ -222,6 +229,7 @@ namespace WildfrostArchipelago
             public bool Mine;      // an item of this slot; otherwise one this slot holds for someone
             public bool Found;
             public string Item, Player, Location;
+            public string Key;     // the hint's identity (finding player and location), for "seen"
         }
 
         // Replaced whole by the socket thread's TrackHints callback; read on the main thread.
@@ -255,7 +263,6 @@ namespace WildfrostArchipelago
             public ItemFlags Flags;
             public bool ToUs;
         }
-        public string Server => config.Server;
         public Dictionary<string, string> CardKinds => cardKinds;
 
         /// <summary>Every item key in the seed (slot_data "item_keys").</summary>
@@ -263,11 +270,46 @@ namespace WildfrostArchipelago
         public Dictionary<string, List<string>> Packs => packs;
         /// <summary>slot_data "goal": 0 win each clan, 1 True Final Boss each clan, 2 Overcranked True Final Boss each clan.</summary>
         public int Goal => goal;
+        /// <summary>slot_data "clans_required": how many clans need a qualifying win (3 in older seeds).</summary>
+        public int ClansRequired => clansRequired;
+
+        /// <summary>
+        /// slot_data "bell_kits": the most bell levels each kit of packs carries, for forced bells. Null in
+        /// older seeds, which force every bell received.
+        /// </summary>
+        public List<BellKit> BellKits => bellKits;
+
+        /// <summary>slot_data "location_rules": what each location needs (rules.rule_json); none in older seeds.</summary>
+        public Dictionary<string, JToken> LocationRules => locationRules;
+
+        /// <summary>Every location's display name by key, looked up at login.</summary>
+        public Dictionary<string, string> LocationNames => locationNames;
+
+        /// <summary>Every item's display name by key ("pack:General:Item:3" is "General Item Pack 3"), looked up at login.</summary>
+        public Dictionary<string, string> ItemNames => itemNames;
+
+        /// <summary>Every location key, in location ID order (the apworld numbers them by area).</summary>
+        public IEnumerable<string> LocationKeys => locationIds?.OrderBy(p => p.Value).Select(p => p.Key) ?? Enumerable.Empty<string>();
+
+        public class BellKit
+        {
+            public int MaxBells;
+            // Each alternative: "Companion" and "Item" packs, "Charm" charms, and the forced "extra" (each one
+            // more companion or item pack, or "charms_per_pack" charms). Older seeds: "Charm" packs and a "total".
+            public List<Dictionary<string, int>> Alternatives;
+        }
+
         /// <summary>slot_data "force_storm_bells": runs must start at the full storm point limit.</summary>
         public bool ForceStormBells => forceStormBells;
 
         /// <summary>slot_data "force_overcrank": with every bell level, runs must start Overcranked.</summary>
         public bool ForceOvercrank => forceOvercrank;
+
+        /// <summary>slot_data "game_speed_up": F6 may speed the game up.</summary>
+        public bool GameSpeedUp => gameSpeedUp;
+
+        /// <summary>slot_data "leader_reroll": unlimited leader rerolls (off in older seeds).</summary>
+        public bool LeaderReroll => leaderReroll;
 
         /// <summary>
         /// Whether Snowdwellers is a tribe item too (slot_data "starting_tribe"; seeds from before that
@@ -295,15 +337,28 @@ namespace WildfrostArchipelago
             CloseSession();
             retryAt = -1;
             loginHandled = false;
+            // Items the old session sent that weren't handled yet. A login to the same seed gets them
+            // all again; one to another seed must not apply them.
+            while (receivedItems.TryDequeue(out _)) { }
             var config = this.config.Copy();
             if (config.Server.Contains("<port>"))
             {
                 Status = "Enter your room's port in the server address";
                 return;
             }
-            Status = $"Connecting to {config.Server} as {config.Slot}...";
-            if (retries == 0) Log(Status);
-            else Debug.Log(ArchipelagoMod.LogPrefix + Status);
+            string connecting = $"Connecting to {config.Server} as {config.Slot}...";
+            if (retries == 0)
+            {
+                Status = connecting;
+                Log(Status);
+            }
+            else
+            {
+                // An automatic retry keeps the lost status (the pill stays Offline) until the attempt
+                // succeeds or fails, rather than flashing Connecting on every try (the user's call, 2026-11-02).
+                Status = "Connection lost; retrying now...";
+                Debug.Log(ArchipelagoMod.LogPrefix + connecting);
+            }
             int current = generation;
             // A retry's failures only go to Player.log; the overlay already said the connection was lost.
             bool quiet = retries > 0;
@@ -345,6 +400,10 @@ namespace WildfrostArchipelago
                             newSession.Socket.DisconnectAsync();
                             return;
                         }
+                        locationNames = locationIds.ToDictionary(p => p.Key,
+                            p => newSession.Locations.GetLocationNameFromId(p.Value, ConnectionConfig.Game) ?? p.Key);
+                        itemNames = itemKeys.GroupBy(p => p.Value).ToDictionary(g => g.Key,
+                            g => newSession.Items.GetItemName(g.First().Key, ConnectionConfig.Game) ?? g.Key);
                         session = newSession;
                         newSession.Hints.TrackHints(found => OnHints(newSession, found));
                         if (deathLinkOn)
@@ -370,7 +429,7 @@ namespace WildfrostArchipelago
                 }
                 catch (Exception e)
                 {
-                    // Surfaces assembly binding (Newtonsoft) and TLS failures, which are what the spike is testing.
+                    // Surfaces assembly binding (Newtonsoft) and TLS failures.
                     if (quiet) Debug.LogWarning(ArchipelagoMod.LogPrefix + $"Can't connect to {config.Server}: " + e);
                     else PostError($"Can't connect to {config.Server}", e, "Connect error");
                     if (current == generation) pending.Enqueue(LostMarker);
@@ -456,11 +515,38 @@ namespace WildfrostArchipelago
             locationIds = locObject.ToObject<Dictionary<string, long>>();
             // Seeds from before the goal option had one win as the goal; 0 is the closest.
             goal = slotData.TryGetValue("goal", out object goalValue) ? Convert.ToInt32(goalValue) : 0;
+            clansRequired = slotData.TryGetValue("clans_required", out object clans) ? Convert.ToInt32(clans) : 3;
+            bellKits = slotData.TryGetValue("bell_kits", out object kits) && kits is JArray kitArray
+                ? kitArray.Select(k => new BellKit
+                {
+                    MaxBells = (int)k[0],
+                    Alternatives = k[1].ToObject<List<Dictionary<string, int>>>(),
+                }).ToList()
+                : null;
+            locationRules = slotData.TryGetValue("location_rules", out object rules) && rules is JObject ruleObject
+                ? ruleObject.Properties().ToDictionary(p => p.Name, p => p.Value)
+                : new Dictionary<string, JToken>();
             forceStormBells = slotData.TryGetValue("force_storm_bells", out object force) && Convert.ToBoolean(force);
             forceOvercrank = slotData.TryGetValue("force_overcrank", out object overcrank) && Convert.ToBoolean(overcrank);
+            gameSpeedUp = slotData.TryGetValue("game_speed_up", out object speedUp) && Convert.ToBoolean(speedUp);
+            leaderReroll = slotData.TryGetValue("leader_reroll", out object reroll) && Convert.ToBoolean(reroll);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);
             return true;
+        }
+
+        /// <summary>
+        /// Main thread only. Leaving one seed for another: what this session sent or queued belongs to the
+        /// old seed. Its queue is already in its own file (SavePending), which the next login to it loads.
+        /// </summary>
+        public void ForgetSeed()
+        {
+            queuedLocations.Clear();
+            sentLocations.Clear();
+            goalQueued = goalSent = false;
+            pendingPath = null;
+            checksToasted.Clear();
+            checksWaiting.Clear();
         }
 
         /// <summary>Main thread only. Loads the offline queue saved for an AP profile and keeps saving to it.</summary>
@@ -498,16 +584,19 @@ namespace WildfrostArchipelago
             }
         }
 
+        /// <summary>Whether a game event is a location in this seed (false before slot data arrives).</summary>
+        public bool IsLocation(string key) => locationIds?.ContainsKey(key) == true;
+
         /// <summary>
         /// Main thread only. Whether a game event's check was sent (or is queued to be): null while
         /// that isn't known (not connected yet) or the event isn't a location.
         /// </summary>
-        /// <summary>Whether a game event is a location in this seed (false before slot data arrives).</summary>
-        public bool IsLocation(string key) => locationIds?.ContainsKey(key) == true;
-
         public bool? CheckSent(string key)
         {
+            // Offline only the first of two checks is queued; the "#2" goes out with it.
             if (queuedLocations.Contains(key)) return true;
+            if (key.EndsWith(SecondSuffix, StringComparison.Ordinal)
+                && queuedLocations.Contains(key.Substring(0, key.Length - SecondSuffix.Length))) return true;
             var current = session;
             var ids = locationIds;
             if (current == null || ids == null || !ids.TryGetValue(key, out long id)) return null;
@@ -539,13 +628,36 @@ namespace WildfrostArchipelago
                 }
                 return;
             }
-            if (!ids.TryGetValue(key, out long id))
+            if (!ids.ContainsKey(key))
             {
                 // Not every game event is a location (tutorial battles, excluded challenges).
                 if (!quiet) Log($"No location for {key}");
                 return;
             }
-            if (current.Locations.AllLocationsChecked.Contains(id)) return;
+            Send(current, key);
+            // The hard moments give two checks (bosses and some challenges; apworld gen_data): the
+            // second is "<key>#2", sent with the first. Offline only the first is queued, and this
+            // sends both once it goes out.
+            if (ids.ContainsKey(key + SecondSuffix)) Send(current, key + SecondSuffix);
+        }
+
+        private const string SecondSuffix = "#2";
+
+        private void Send(ArchipelagoSession current, string key)
+        {
+            long id = locationIds[key];
+            bool done;
+            try
+            {
+                done = current.Locations.AllLocationsChecked.Contains(id);
+            }
+            catch (InvalidOperationException)
+            {
+                // The socket thread changed the list mid-read. Sending again is harmless, and
+                // skipping it would lose a check FlushQueued has already taken off the queue.
+                done = false;
+            }
+            if (done) return;
             sentLocations.Add(key);
 
             ThreadPool.QueueUserWorkItem(_ =>
@@ -677,8 +789,13 @@ namespace WildfrostArchipelago
                 if (message == FlushMarker)
                 {
                     // Logged in: ApMode picks (or switches to) this seed's profile, which loads its
-                    // saved offline queue, then everything queued this session is sent.
-                    ApMode.OnConnected(this, seed, config.Slot);
+                    // saved offline queue, then everything queued this session is sent. A seed this
+                    // session can't switch to is left at once (the settings stay saved for a restart).
+                    if (!ApMode.OnConnected(this, seed, config.Slot))
+                    {
+                        Disconnect();
+                        continue;
+                    }
                     loginHandled = true;
                     reconnect = true;
                     retries = 0;
@@ -700,6 +817,9 @@ namespace WildfrostArchipelago
                     CloseSession();
                     float delay = RetryDelays[Math.Min(retries, RetryDelays.Length - 1)];
                     if (retries == 0) Log("Connection lost; reconnecting by itself (F9 to try now)");
+                    // Once the quick retries (2, 5, 10, 30 s) have failed and it's down to once a minute,
+                    // the player hears about it in the game too (the user's call, 2026-11-02).
+                    if (retries == RetryDelays.Length - 1) ArchipelagoOverlay.NotifyOffline(lost: true);
                     retries++;
                     retryAt = Time.unscaledTime + delay;
                     Status = $"Connection lost; retrying in {delay:0}s";
@@ -882,6 +1002,7 @@ namespace WildfrostArchipelago
                 {
                     Mine = mine,
                     Found = hint.Found,
+                    Key = $"{hint.FindingPlayer}:{hint.LocationId}",
                     Item = current.Items.GetItemName(hint.ItemId, receiver?.Game) ?? hint.ItemId.ToString(),
                     // Null for an item of ours in our own world.
                     Player = mine && hint.FindingPlayer == me ? null : (mine ? finder : receiver)?.Alias ?? "?",

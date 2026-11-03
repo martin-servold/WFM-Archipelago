@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from BaseClasses import ItemClassification, Location
+from BaseClasses import ItemClassification, Location, LocationProgressType
 
 from . import items
 from .data import LOCATIONS
@@ -21,6 +21,7 @@ CHALLENGE_REGION = {
     "Challenge Charm 8": "Area 3",   # Defeat the Frost Guardian with a Scrappy Sword
     "Challenge Charm 12": "Area 2",  # Survive King Moko (Spice Mokos, an Area 2 battle)
     "Challenge Charm 15": "Area 3",  # 3 win streak
+    "Challenge Charm 16": "Area 3",  # Sunbringer: beat the True Final Boss
     "Challenge Charm 17": "Area 3",  # Win with the Naked Gnome
     "Challenge Charm 19": "Area 3",  # Win without charms
     "Challenge Charm 21": "Area 3",  # Win with only the pet
@@ -30,7 +31,7 @@ CHALLENGE_REGION = {
 }
 
 # The goal is a winning run per clan (what counts as winning depends on the goal option). Each is
-# an event location holding a "Victory"; the seed is done with all three.
+# an event location holding a "Victory"; the seed is done with as many as Clans Required asks for.
 CLANS = {"Basic": "Snowdwellers", "Magic": "Shademancers", "Clunk": "Clunkmasters"}
 VICTORY_ITEM = "Victory"
 
@@ -54,12 +55,32 @@ def included(world: WildfrostWorld, info: dict) -> bool:
     return not info.get("true_final") or world.options.goal != world.options.goal.option_win_each_clan
 
 
+# Filler only (decided by the user 2026-11-02): Gnomebringer (win a run with the Naked Gnome) is too
+# much luck to hold anything needed.
+EXCLUDED_CHALLENGES = {"Challenge Charm 17"}
+SUNBRINGER = "Challenge Charm 16"
+
+
+def sunbringer_excluded(world: WildfrostWorld) -> bool:
+    """
+    Sunbringer (beat the True Final Boss, both its checks) is filler only when the goal is a plain win
+    (any number of clans), which it lies past, or a single True Final Boss win, Overcranked or not,
+    which it is.
+    """
+    goal = world.options.goal
+    return goal == goal.option_win_each_clan or world.options.clans_required == 1
+
+
 def create_all_locations(world: WildfrostWorld) -> None:
     for key, name, loc_id, info in LOCATIONS:
         if not included(world, info):
             continue
         region = world.get_region(region_for(key, info))
-        region.locations.append(WildfrostLocation(world.player, name, loc_id, region))
+        location = WildfrostLocation(world.player, name, loc_id, region)
+        internal = info.get("internal")
+        if internal in EXCLUDED_CHALLENGES or (internal == SUNBRINGER and sunbringer_excluded(world)):
+            location.progress_type = LocationProgressType.EXCLUDED
+        region.locations.append(location)
 
     final_area = world.get_region("Area 3")
     for clan in CLANS:

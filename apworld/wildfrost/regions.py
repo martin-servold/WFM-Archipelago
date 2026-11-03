@@ -17,7 +17,6 @@ def create_and_connect_regions(world: WildfrostWorld) -> None:
     regions = [Region(name, world.player, world.multiworld) for name in names]
     world.multiworld.regions += regions
 
-    # A run goes Snowdwell -> Area 1 -> Area 2 -> Area 3. The entrances carry the (future) area
-    # power requirements; for now every area is open.
+    # A run goes Snowdwell -> Area 1 -> Area 2 -> Area 3. Every area is open (areas as items are shelved).
     for parent, child in zip(regions, regions[1:]):
         parent.connect(child, f"{parent.name} to {child.name}")

@@ -35,6 +35,9 @@ namespace WildfrostArchipelago
         [ConfigItem(false, "Development tools: F8 sends a check, F10 a blank survey profile, and the survey log and content dump", "debug")]
         public bool debug;
 
+        [ConfigItem(100, "Game speed in percent on the Archipelago profile (100 is normal; F6 steps through 100, 150 and 200)", "speed")]
+        public int speed;
+
         internal static bool DebugMode => Instance != null && Instance.debug;
 
         /// <summary>This mod's Harmony ID, to tell its patches from other mods' (CompatCheck).</summary>
@@ -86,6 +89,7 @@ namespace WildfrostArchipelago
         {
             LocationHooks.Disable();
             ApMode.Exit();
+            GameSpeed.Reset();
             HookSurvey.Disable();
             SurveyLog.Close();
 

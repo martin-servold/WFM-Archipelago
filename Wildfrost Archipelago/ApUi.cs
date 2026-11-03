@@ -10,8 +10,9 @@ namespace WildfrostArchipelago
     /// <summary>
     /// The player-facing UI (decided with the user 2026-10-31): toasts at the top right for items
     /// received and checks sent, a status pill at the top left (connection and unread log lines;
-    /// clicking it opens the full log, ArchipelagoOverlay), and a hint panel on H. Built in uGUI with
-    /// the game's own TextMeshPro font. Main thread only.
+    /// clicking it opens the full log, ArchipelagoOverlay), and a panel on H with tabs for hints,
+    /// checks and packs (ApTracker; 2026-11-02). Built in uGUI with the game's own TextMeshPro font.
+    /// Main thread only.
     /// </summary>
     internal class ApUi : MonoBehaviour
     {
@@ -27,6 +28,10 @@ namespace WildfrostArchipelago
         private const float RightClear = 110f, TopMargin = 24f;
         private const int MaxToasts = 4;
         private const string SeenKey = "apToastSeen";
+        private const string HintsSeenKey = "apHintsSeen";
+        private const float PanelRefreshSeconds = 1f;
+        private static readonly string[] Tabs = { "Hints", "Checks", "Packs" };
+        private static readonly Color HintColor = new Color32(0x8A, 0x5C, 0xC2, 0xFF);
 
         private static ApUi instance;
         // Received items wait for the AP profile, whose save says which were already shown (the
@@ -37,12 +42,15 @@ namespace WildfrostArchipelago
         private Canvas canvas;
         private RectTransform toastColumn;
         private readonly List<KeyValuePair<CanvasGroup, float>> toasts = new List<KeyValuePair<CanvasGroup, float>>();
-        private GameObject pill, hintPanel;
+        private GameObject pill, hintPanel, rerollButton;
         private Image pillDot;
-        private TextMeshProUGUI pillText, hintText;
+        private TextMeshProUGUI pillText, hintText, rerollText;
         private TMP_FontAsset font;
         private Sprite rounded;
         private int linesSeen;
+        private int tab, packGroup, checkPage;
+        private float panelRefreshAt;
+        private IReadOnlyList<ArchipelagoClient.HintRow> hintsChecked;
 
         /// <summary>
         /// Whether an item was already shown in an earlier session. The server resends every item on
@@ -52,6 +60,9 @@ namespace WildfrostArchipelago
 
         public static void QueueReceived(int index, string item, string body) =>
             pendingReceived.Add(new KeyValuePair<int, KeyValuePair<string, string>>(index, new KeyValuePair<string, string>(item, body)));
+
+        /// <summary>Leaving one seed for another: its received toasts not shown yet are dropped.</summary>
+        public static void ForgetSeed() => pendingReceived.Clear();
 
         public static void ShowToast(string title, string item, string body, Color accent)
         {
@@ -75,18 +86,62 @@ namespace WildfrostArchipelago
             bool hidden = ArchipelagoOverlay.HiddenUntilMenu;
             canvas.enabled = !hidden;
             ShowReceived();
+            AlertNewHints(client);
             // Below the hint panel while it's open, so they don't cover it.
             float below = hintPanel.activeSelf ? ((RectTransform)hintPanel.transform).rect.height + 12f : 0f;
             toastColumn.anchoredPosition = new Vector2(-RightClear, -TopMargin - below);
             UpdateToasts();
             UpdatePill(client);
+            UpdateReroll(hidden);
 
             if (!ArchipelagoOverlay.Typing && !ConnectPopup.IsOpen && !hidden)
             {
-                if (Input.GetKeyDown(KeyCode.H)) hintPanel.SetActive(!hintPanel.activeSelf);
-                else if (hintPanel.activeSelf && Input.GetKeyDown(KeyCode.Escape)) hintPanel.SetActive(false);
+                if (Input.GetKeyDown(KeyCode.H)) OpenPanel(!hintPanel.activeSelf, tab);
+                // Not Escape: that's the game's pause menu, and the panel should stay up through it (the user's call, 2026-11-02).
+                else if (hintPanel.activeSelf && Input.GetKeyDown(KeyCode.Tab)) OpenPanel(true, (tab + 1) % Tabs.Length);
+                else if (hintPanel.activeSelf && tab > 0 && Input.GetKeyDown(KeyCode.PageDown)) ChangePage(1);
+                else if (hintPanel.activeSelf && tab > 0 && Input.GetKeyDown(KeyCode.PageUp)) ChangePage(-1);
             }
-            if (hintPanel.activeSelf) UpdateHints(client);
+            // The Checks tab evaluates every location's rule, so the text is rebuilt once a second
+            // (and right away on a key), not every frame.
+            if (hintPanel.activeSelf && Time.unscaledTime >= panelRefreshAt) UpdatePanel(client);
+        }
+
+        private void OpenPanel(bool open, int newTab)
+        {
+            hintPanel.SetActive(open);
+            tab = newTab;
+            panelRefreshAt = 0;
+        }
+
+        // PgUp/PgDn: the Checks tab's pages (wrapped by ApTracker, which knows how many), or the Packs tab's groups.
+        private void ChangePage(int step)
+        {
+            if (tab == 1) checkPage += step;
+            else packGroup = (packGroup + step + ApTracker.PackGroupCount) % ApTracker.PackGroupCount;
+            panelRefreshAt = 0;
+        }
+
+        // A new hint for an item this slot holds for someone else opens the panel on the hints: they
+        // may be stuck waiting for it (a missed hint kept a player BK'd in a playtest, 2026-11-01).
+        // New hints for our own items get a toast. Hints are saved as seen in the AP profile, since
+        // the server sends them all again on every connect.
+        private void AlertNewHints(ArchipelagoClient client)
+        {
+            var rows = client.Hints;
+            if (ReferenceEquals(rows, hintsChecked) || !ApMode.Active) return;
+            hintsChecked = rows;
+            var seen = SaveSystem.LoadProgressData(HintsSeenKey, new List<string>());
+            var fresh = rows.Where(r => !r.Found && r.Key != null && !seen.Contains(r.Key)).ToList();
+            if (fresh.Count == 0) return;
+            foreach (var row in fresh)
+            {
+                seen.Add(row.Key);
+                if (row.Mine) AddToast("Hint", row.Item, $"at {(row.Player == null ? "" : row.Player + "'s ")}{row.Location}", HintColor);
+                else AddToast("Someone needs this", $"{row.Item} for {row.Player}", $"at {row.Location}", HintColor);
+            }
+            SaveSystem.SaveProgressData(HintsSeenKey, seen);
+            if (fresh.Any(r => !r.Mine)) OpenPanel(true, 0);
         }
 
         private void ShowReceived()
@@ -135,6 +190,7 @@ namespace WildfrostArchipelago
 
             BuildPill(root.transform);
             BuildHintPanel(root.transform);
+            BuildRerollButton(root.transform);
             return true;
         }
 
@@ -183,6 +239,32 @@ namespace WildfrostArchipelago
             hintPanel.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             hintText = Text(rect, "", 22, TextColor);
             hintPanel.SetActive(false);
+        }
+
+        // The leader reroll (LeaderReroll): bottom centre, below the leader cards, styled like the pill.
+        private void BuildRerollButton(Transform parent)
+        {
+            var rect = NewRect("LeaderReroll", parent);
+            Anchor(rect, new Vector2(0.5f, 0), new Vector2(0, 36));
+            rerollButton = rect.gameObject;
+            Panel(rerollButton, PillColor);
+            var layout = rerollButton.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(22, 22, 10, 10);
+            layout.childControlWidth = layout.childControlHeight = true;
+            var fitter = rerollButton.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            rerollText = Text(rect, "", 24, Color.white);
+            rerollButton.AddComponent<Button>().onClick.AddListener(LeaderReroll.Try);
+            rerollButton.SetActive(false);
+        }
+
+        private void UpdateReroll(bool hidden)
+        {
+            bool show = !hidden && LeaderReroll.Showing;
+            if (rerollButton.activeSelf != show) rerollButton.SetActive(show);
+            if (!show) return;
+            rerollText.text = "Reroll leaders  <size=80%>(R)</size>";
+            if (!ArchipelagoOverlay.Typing && !ConnectPopup.IsOpen && Input.GetKeyDown(KeyCode.R)) LeaderReroll.Try();
         }
 
         // --- Toasts ---
@@ -239,13 +321,21 @@ namespace WildfrostArchipelago
             pillText.text = unread > 0 ? $"Archipelago  {state}  |  {unread} new" : $"Archipelago  {state}";
         }
 
-        private void UpdateHints(ArchipelagoClient client)
+        private void UpdatePanel(ArchipelagoClient client)
         {
-            var rows = client.Hints;
-            var text = new StringBuilder("<b>Hints</b>  <size=70%>(H to close)</size>\n");
-            Section(text, "Your items", rows.Where(r => r.Mine), r => $"{r.Item}  <size=80%>at {(r.Player == null ? "" : r.Player + "'s ")}{r.Location}</size>");
-            Section(text, "Items you hold for others", rows.Where(r => !r.Mine), r => $"{r.Item} for {r.Player}  <size=80%>at {r.Location}</size>");
-            if (!client.Connected) text.Append("\n<size=80%>Not connected; these may be out of date.</size>");
+            panelRefreshAt = Time.unscaledTime + PanelRefreshSeconds;
+            // The tab row: the open one bold, the others dimmed.
+            var text = new StringBuilder(string.Join("   ", Tabs.Select((t, i) => i == tab ? $"<b>{t}</b>" : $"<alpha=#80>{t}<alpha=#FF>")));
+            text.Append("   <size=70%>(Tab to switch, H to close)</size>\n");
+            if (tab == 1) ApTracker.Checks(text, client, checkPage);
+            else if (tab == 2) ApTracker.Packs(text, client, packGroup);
+            else
+            {
+                var rows = client.Hints;
+                Section(text, "Your items", rows.Where(r => r.Mine), r => $"{r.Item}  <size=80%>at {(r.Player == null ? "" : r.Player + "'s ")}{r.Location}</size>");
+                Section(text, "Items you hold for others", rows.Where(r => !r.Mine), r => $"{r.Item} for {r.Player}  <size=80%>at {r.Location}</size>");
+            }
+            if (!client.Connected) text.Append("\n<size=80%>Not connected; this may be out of date.</size>");
             hintText.text = text.ToString();
         }
 

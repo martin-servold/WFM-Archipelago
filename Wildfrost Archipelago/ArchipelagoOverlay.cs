@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -23,6 +25,43 @@ namespace WildfrostArchipelago
 
         // "Play without Archipelago" hides the overlay until the player is back on the main menu.
         private static bool hiddenUntilMenu, leftMenu;
+
+        // Playing offline is put in front of the player with the game's own prompt (as for boons and
+        // traps), saying the progress is only local for now (asked for by the user 2026-11-02): after
+        // "Continue offline" in the connect popup, once past the main menu (a moment after it unloads, so
+        // not on the loading screen), and when the connection goes mid-game: at once for /disconnect,
+        // and for a lost connection once the client's quick retries have failed (ArchipelagoClient).
+        private const float ContinueOfflineDelay = 1.5f, OfflineDelay = 0.3f;
+        private const string ContinueOfflineText =
+            "You're playing offline. Your progress is saved on this computer, and your checks are sent when you reconnect (F9).";
+        private const string LostText =
+            "Connection to Archipelago lost. Your progress is saved on this computer, and your checks are sent once the mod reconnects (it tries every minute; F9 to try now).";
+        private const string DisconnectedText =
+            "Disconnected from Archipelago. Your progress is saved on this computer, and your checks are sent when you reconnect (F9).";
+        private static string noticeText;
+        private static float noticeDelay;
+
+        public static void ShowOfflineNotice() => QueueNotice(ContinueOfflineText, ContinueOfflineDelay);
+
+        /// <summary>The connection went while playing (lost: it reconnects by itself). Nothing on the main menu.</summary>
+        public static void NotifyOffline(bool lost)
+        {
+            if (!AtMainMenu) QueueNotice(lost ? LostText : DisconnectedText, OfflineDelay);
+        }
+
+        private static void QueueNotice(string text, float delay)
+        {
+            noticeText = text;
+            noticeDelay = delay;
+        }
+
+        private static bool AtMainMenu => ApMode.AtMainMenu();
+
+        private IEnumerator OfflineNotice(ArchipelagoClient client, string text, float delay)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+            if (!client.Connected && ApMode.Active && !AtMainMenu) yield return ApPatches.ShowPrompt(text);
+        }
 
         public static void HideUntilMainMenu()
         {
@@ -50,14 +89,18 @@ namespace WildfrostArchipelago
             client.Drain();
             if (hiddenUntilMenu)
             {
-                // Fully qualified: the game has its own global SceneManager class that shadows Unity's.
-                bool atMenu = UnityEngine.SceneManagement.SceneManager.GetSceneByName("MainMenu").isLoaded;
-                if (!atMenu) leftMenu = true;
+                if (!AtMainMenu) leftMenu = true;
                 else if (leftMenu) hiddenUntilMenu = false;
+            }
+            if (noticeText != null && !AtMainMenu)
+            {
+                StartCoroutine(OfflineNotice(client, noticeText, noticeDelay));
+                noticeText = null;
             }
             ApMode.Tick();
             DeathLinkHandler.Tick();
             ApEffects.Tick();
+            GameSpeed.Tick();
 
             // Typing goes to the chat line, not the hotkeys. (OnGUI flags these; the line is drawn
             // until the next frame so IMGUI's layout and repaint passes agree.)
@@ -69,6 +112,7 @@ namespace WildfrostArchipelago
                 return;
             }
 
+            if (Input.GetKeyDown(KeyCode.F6)) GameSpeed.Cycle(client);
             if (Input.GetKeyDown(KeyCode.F7)) logOpen = !logOpen;
             if (Input.GetKeyDown(KeyCode.F9)) client.Connect();
             if (Input.GetKeyDown(KeyCode.F11)) client.Log(ApMode.Describe());
@@ -119,6 +163,7 @@ namespace WildfrostArchipelago
                 case "/disconnect":
                     client.Disconnect();
                     client.Log("Disconnected");
+                    NotifyOffline(lost: false);
                     break;
                 case "/help":
                     client.Log("Local commands: /connect [server] [slot] [password], /disconnect, /help. " +
@@ -138,8 +183,7 @@ namespace WildfrostArchipelago
         // which also refuses to switch mid-campaign.
         private static void SwitchToSurveyProfile(ArchipelagoClient client)
         {
-            // Fully qualified: the game has its own global SceneManager class that shadows Unity's.
-            if (!UnityEngine.SceneManagement.SceneManager.GetSceneByName("MainMenu").isLoaded)
+            if (!AtMainMenu)
             {
                 client.Log("F10: profile can only be switched from the main menu");
                 return;
@@ -220,7 +264,10 @@ namespace WildfrostArchipelago
             GUILayout.BeginArea(new Rect(area.x + 6, area.y + 4, area.width - 12, area.height - 8));
             // Header: status, then the keys as a muted caption, then a line above the messages.
             GUILayout.Label($"Archipelago: {client.Status}" + (ArchipelagoMod.DebugMode ? $"   profile: {SaveSystem.Profile}" : ""), titleStyle);
-            GUILayout.Label(Keys(("F7", "close log"), ("F9", "reconnect"), ("H", "hints"), ("Enter", "chat")), keysStyle);
+            var keys = new List<(string, string)> { ("F7", "close log"), ("F9", "reconnect"), ("H", "hints"), ("Enter", "chat") };
+            // F6 only where it does something: the AP profile of a seed with game_speed_up.
+            if (ApMode.Active && ApMode.SpeedUpAllowed) keys.Add(("F6", $"speed ({GameSpeed.Factor:0.#}x)"));
+            GUILayout.Label(Keys(keys.ToArray()), keysStyle);
             // F11 (AP state) works but isn't advertised; the debug keys only show with debug on.
             if (ArchipelagoMod.DebugMode) GUILayout.Label("Debug   " + Keys(("F8", "send a check"), ("F10", "survey profile (main menu)")), keysStyle);
             GUILayout.Space(4);

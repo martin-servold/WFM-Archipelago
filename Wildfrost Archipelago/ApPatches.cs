@@ -15,7 +15,7 @@ namespace WildfrostArchipelago
     {
         // CharacterRewards.RemoveLockedCards strips these from the run's reward pools at campaign
         // start and load. Vanilla returns the tail of an unlock-ordered list; AP returns every card
-        // not yet received. Cards received mid-run join the pools at the next run (or continue).
+        // not yet received. Cards received mid-run join the run's pools at once (ApMode.AddToRun).
         [HarmonyPatch(typeof(MetaprogressionSystem), nameof(MetaprogressionSystem.GetLockedItems))]
         private static class LockedItems
         {
@@ -61,7 +61,8 @@ namespace WildfrostArchipelago
             }
         }
 
-        // Vanilla reads petHutUnlocks; Wolfie has no unlock and is always there.
+        // Vanilla reads petHutUnlocks; Wolfie (Snoof) has no unlock and is always there, except in seeds
+        // that made it an item (ApMode.PetUnlocked). With no pet, the run starts without one (Gain).
         [HarmonyPatch(typeof(MetaprogressionSystem), nameof(MetaprogressionSystem.GetUnlockedPets))]
         private static class UnlockedPets
         {
@@ -72,6 +73,56 @@ namespace WildfrostArchipelago
                     .Where(p => ApMode.PetUnlocked(p.Key, p.Value))
                     .Select(p => p.Key)
                     .ToArray();
+            }
+        }
+
+        // Inside the pet house, a pet without an unlock (Snoof) is always shown, since vanilla always has
+        // it; under AP it's an item (seen 2026-11-02). Once the cards are dealt, one not received is
+        // taken out of its slot, and the slot gets back the empty look the locked ones have.
+        [HarmonyPatch(typeof(PetHutSequence), "CreateCards")]
+        private static class PetHutLockedPets
+        {
+            private static void Postfix(PetHutSequence __instance, ref IEnumerator __result)
+            {
+                if (ApMode.Active) __result = ThenHideLocked(__result, __instance);
+            }
+
+            private static IEnumerator ThenHideLocked(IEnumerator deal, PetHutSequence hut)
+            {
+                yield return deal;
+                var slots = Traverse.Create(hut).Field("cardSlots").GetValue<CardContainer[]>();
+                if (slots == null) yield break;
+                var pets = MetaprogressionSystem.GetPetDict();
+                foreach (var slot in slots.Where(s => s != null))
+                {
+                    foreach (var card in slot.ToList())
+                    {
+                        string pet = card?.data?.name;
+                        if (pet == null || !pets.TryGetValue(pet, out string unlock) || ApMode.PetUnlocked(pet, unlock)) continue;
+                        slot.Remove(card);
+                        UnityEngine.Object.Destroy(card.gameObject);
+                        var image = slot.GetComponent<UnityEngine.UI.Image>();
+                        if (image != null) image.enabled = true;
+                    }
+                }
+            }
+        }
+
+        // The pet house's flag in town shows "selectedPet" as a place in the full pet list (GetPetDict
+        // order: Snoof, Booshu, Loki, ...), but Gain saves the pet's place among the unlocked ones. In
+        // vanilla pets unlock in list order, so the two agree; under AP any mix can be unlocked, and a
+        // lone Loki (place 0 of 1) showed Snoof's flag (seen 2026-11-02). Saved as its place in the
+        // full list instead.
+        [HarmonyPatch(typeof(SelectStartingPet), nameof(SelectStartingPet.Gain))]
+        private static class PetHutFlag
+        {
+            private static void Postfix(SelectStartingPet __instance)
+            {
+                if (!ApMode.Active || __instance.selectedPetIndex < 0) return;
+                var pets = Traverse.Create(__instance).Field("pets").GetValue<List<Entity>>();
+                string pet = pets != null && __instance.selectedPetIndex < pets.Count ? pets[__instance.selectedPetIndex]?.data?.name : null;
+                int place = MetaprogressionSystem.GetPetDict().Keys.ToList().IndexOf(pet);
+                if (place >= 0) SaveSystem.SaveProgressData("selectedPet", place);
             }
         }
 
@@ -120,9 +171,11 @@ namespace WildfrostArchipelago
         // so does the Charm Shop event (one item and charms), and item and companion nodes would
         // offer nothing. While a pool the node needs has no card left this run, the node becomes a
         // Bling node instead, remembering what it was ("apWas").
-        // Every reward node also records how many of this run's cards had been received when it
-        // rolled ("apCards"): the map rolls every node at run start, so cards received later reach
-        // a node only through the re-roll in EnterNodeReroll.
+        // Nodes draw when they're entered, not when the map is made (the user's call, 2026-11-02): the
+        // map rolls every node at run start, and with a few cards in a pool the shops and boss rewards
+        // took them all before any charm node was reached. So a roll at map setup puts its cards back
+        // into the deck at once (unseen), and EnterNodeReroll rolls the node again on entry, marking it
+        // drawn ("apDrawn"). Every reward node is marked as one ("apCards").
         [HarmonyPatch]
         private static class EmptyPoolNodes
         {
@@ -155,6 +208,9 @@ namespace WildfrostArchipelago
             /// <summary>Set while a re-roll that must keep its node type (it holds a secret card) sets up.</summary>
             public static bool KeepType;
 
+            /// <summary>Set while a node draws on entry: what it draws is shown, so it stays out of the deck.</summary>
+            public static bool AtEntry;
+
             // __state is the node type it stood in for, when it became a Bling node.
             private static bool Prefix(CampaignNodeType __instance, CampaignNode node, ref IEnumerator __result, out string __state)
             {
@@ -171,14 +227,14 @@ namespace WildfrostArchipelago
             // SetUp ends by assigning a new node.data, so the marks are written once it has run.
             private static void Postfix(CampaignNodeType __instance, CampaignNode node, ref IEnumerator __result, string __state)
             {
-                if (ApMode.Active && PoolsOfNode.ContainsKey(__instance.GetType())) __result = Mark(__result, node, ApMode.RunCardCount(), __state ?? __instance.name, KeepType);
+                if (ApMode.Active && PoolsOfNode.ContainsKey(__instance.GetType())) __result = Mark(__result, node, __state ?? __instance.name, KeepType, AtEntry);
             }
 
             // The map sets up all its nodes at once, so every node's check above can pass before any
             // of them draws, and the last ones to draw then find the deck empty (the charm node
             // indexes its draw without checking; item and companion nodes just come up empty). Such a
             // node becomes Bling after all, unless it must keep its type (a re-roll holding a secret card).
-            private static IEnumerator Mark(IEnumerator setUp, CampaignNode node, int rolledWith, string type, bool keepType)
+            private static IEnumerator Mark(IEnumerator setUp, CampaignNode node, string type, bool keepType, bool atEntry)
             {
                 bool swapped = node.type.name != type;
                 bool drewNothing = false;
@@ -208,13 +264,36 @@ namespace WildfrostArchipelago
                 }
                 string was = swapped ? type : null;
                 if (node.data == null) node.data = new Dictionary<string, object>();
-                node.data[RolledKey] = rolledWith;
+                node.data[RolledKey] = true;
                 if (was != null) node.data[WasKey] = was;
+                if (atEntry) node.data[DrawnKey] = true;
+                else ReturnToDeck(EnsurePools(), NamesIn(node));
             }
         }
 
         private const string RolledKey = "apCards";
         private const string WasKey = "apWas";
+        private const string DrawnKey = "apDrawn";
+
+        private static HashSet<string> NamesIn(CampaignNode node)
+        {
+            var names = new HashSet<string>();
+            foreach (var value in node.data?.Values ?? Enumerable.Empty<object>()) CollectNames(value, names, 0);
+            return names;
+        }
+
+        // A boss rolls its rewards with the map too; like the reward nodes, those go back into the deck,
+        // and the boss draws them again when its fight is entered (EnterNodeReroll).
+        [HarmonyPatch(typeof(CampaignNodeTypeBoss), nameof(CampaignNodeTypeBoss.GetRewards), typeof(CampaignNode))]
+        private static class BossRewardsOnEntry
+        {
+            private static void Postfix(CampaignNode node)
+            {
+                if (!ApMode.Active || node?.data == null) return;
+                if (EmptyPoolNodes.AtEntry) node.data[DrawnKey] = true;
+                else ReturnToDeck(EnsurePools(), NamesIn(node));
+            }
+        }
 
         /// <summary>
         /// At 10 storm points AddSecretCardsSystem puts the Lumin Vase pieces (Broken Vase, Lumin
@@ -348,20 +427,23 @@ namespace WildfrostArchipelago
         private static CampaignNodeType FindNodeType(string name) =>
             AddressableLoader.GetGroup<CampaignNodeType>("CampaignNodeType").FirstOrDefault(t => t.name == name);
 
-        // Entering a reward node that rolled before more of this run's cards arrived rolls it again
-        // first, and a Bling node that stood in for one turns back into it if it can now be filled.
-        // A stand-in that stays Bling says so, since its map icon shows the node it replaced.
-        // Cleared nodes are left alone.
+        // Entering a reward node that hasn't drawn yet rolls it now, from what this run hasn't shown,
+        // and a Bling node that stood in for one turns back into it if it can be filled. A stand-in
+        // that stays Bling says so, since its map icon shows the node it replaced. A boss draws its
+        // rewards when its fight is entered. Cleared nodes are left alone.
         [HarmonyPatch(typeof(Campaign), "EnterNode")]
         private static class EnterNodeReroll
         {
             private static void Postfix(CampaignNode node, ref IEnumerator __result)
             {
                 if (!ApMode.Active || node == null || node.cleared || node.data == null) return;
-                bool stale = node.data.TryGetValue(RolledKey, out object rolled)
-                             && (System.Convert.ToInt32(rolled) < ApMode.RunCardCount() || HoldsNothing(node))
-                             && !Opened(node);
-                if (stale)
+                if (node.type is CampaignNodeTypeBoss && node.data.ContainsKey("rewards") && !node.data.ContainsKey(DrawnKey))
+                {
+                    DrawBossRewards(node);
+                    return;
+                }
+                bool undrawn = node.data.ContainsKey(RolledKey) && !node.data.ContainsKey(DrawnKey) && !Opened(node);
+                if (undrawn)
                 {
                     __result = Reroll(node, __result);
                     return;
@@ -372,7 +454,7 @@ namespace WildfrostArchipelago
 
             // A chest or charm opened (or a shop visited) before the game was quit is saved that way,
             // and continuing enters it again: its cards were already seen, so it keeps them, or a
-            // card arriving in between gave a free re-roll and undid the shop's purchases.
+            // re-roll undid the shop's purchases. (Saves from before draws on entry have no apDrawn.)
             internal static bool Opened(CampaignNode node) =>
                 node.data.TryGetValue("open", out object open) && open is bool isOpen && isOpen
                 || node.data.TryGetValue("openCount", out object count) && System.Convert.ToInt32(count) > 0;
@@ -388,15 +470,17 @@ namespace WildfrostArchipelago
             {
                 var was = node.data.TryGetValue(WasKey, out object name) ? FindNodeType(name as string) : null;
                 var secrets = SecretCards.In(node);
-                var held = new HashSet<string>();
-                foreach (var value in node.data.Values) CollectNames(value, held, 0);
                 // SetUp replaces node.data; clearing it first keeps old keys from leaking into one that adds.
                 node.data.Clear();
                 if (was != null) SwapType(node, was);
-                ReturnToDeck(EnsurePools(), held);
-                ArchipelagoMod.Client?.LogDebug($"New cards since this {Describe(node.type.name)} node was rolled: rolling it again");
+                // What it rolled with the map already went back into the deck then (Mark), or, in a run
+                // continued from a save, the rebuilt pools left it in. Putting it back again here gave
+                // out cards shown since, twice (a boss offered charms already in the deck, 2026-11-02).
+                EnsurePools();
+                ArchipelagoMod.Client?.LogDebug($"Entered this {Describe(node.type.name)} node: it draws now");
                 // A node holding a secret card stays what it is even with its pool empty.
                 EmptyPoolNodes.KeepType = secrets.Count > 0;
+                EmptyPoolNodes.AtEntry = true;
                 IEnumerator setUp;
                 try
                 {
@@ -404,12 +488,28 @@ namespace WildfrostArchipelago
                 }
                 finally
                 {
-                    EmptyPoolNodes.KeepType = false;
+                    EmptyPoolNodes.KeepType = EmptyPoolNodes.AtEntry = false;
                 }
                 yield return setUp;
                 foreach (string card in secrets) SecretCards.PutBack(node, card, "Kept {0} in the re-rolled node");
                 SecretCards.Repair(node);
                 yield return AnnounceBling(node, enter);
+            }
+
+            // The rewards rolled with the map went back into the deck then (BossRewardsOnEntry); drawn now.
+            private static void DrawBossRewards(CampaignNode node)
+            {
+                EnsurePools();
+                node.data.Remove("rewards");
+                EmptyPoolNodes.AtEntry = true;
+                try
+                {
+                    CampaignNodeTypeBoss.GetRewards(node);
+                }
+                finally
+                {
+                    EmptyPoolNodes.AtEntry = false;
+                }
             }
 
             private static IEnumerator AnnounceBling(CampaignNode node, IEnumerator enter)
@@ -451,6 +551,20 @@ namespace WildfrostArchipelago
                 {
                     SwapType(__instance, otherNode.type);
                 }
+            }
+        }
+
+        // A stand-in gives 1 Bling, not the Bling node's usual roll (decided by the user 2026-11-02): the
+        // stand-ins were most of the early Bling, which bought charms and fed the Greed Charm. The amount
+        // is read when the node is entered, so it's set then; real Bling nodes keep their roll.
+        [HarmonyPatch(typeof(CampaignNodeTypeGold), nameof(CampaignNodeTypeGold.Run))]
+        private static class StandInBling
+        {
+            private const int Amount = 1;
+
+            private static void Prefix(CampaignNode node)
+            {
+                if (ApMode.Active && node?.data != null && node.data.ContainsKey(WasKey)) node.data["amount"] = Amount;
             }
         }
 
@@ -509,8 +623,8 @@ namespace WildfrostArchipelago
             }
         }
 
-        // Hovering a node shows its label. A stand-in's label (the node it replaced) says when
-        // entering it now would still give Bling, so the player knows before choosing the path, and
+        // Hovering a node shows its label. A reward node's label (a stand-in's: the node it replaced)
+        // says when entering it now would give Bling, so the player knows before choosing the path, and
         // a battle's says whether its check for this tribe was sent (CheckMarker). The label's own
         // text is kept, so the added line changes as cards arrive and checks are sent.
         [HarmonyPatch(typeof(MapNode), "Hover")]
@@ -542,6 +656,13 @@ namespace WildfrostArchipelago
                 {
                     return EmptyPoolNodes.CanFill(FindNodeType(was as string)) ? null : $"No {Describe(was as string)} left: Bling";
                 }
+                // A node that draws when entered (EnterNodeReroll) gives Bling if its pool is empty by
+                // then; one holding a secret card keeps its type.
+                bool undrawn = node.data.ContainsKey(RolledKey) && !node.data.ContainsKey(DrawnKey) && !EnterNodeReroll.Opened(node);
+                if (undrawn && SecretCards.In(node).Count == 0)
+                {
+                    return EmptyPoolNodes.CanFill(node.type) ? null : $"No {Describe(node.type.name)} left: Bling";
+                }
                 // An empty node from before empty draws became stand-ins re-rolls on entry, and gives
                 // Bling if there is still nothing to draw.
                 bool empty = EnterNodeReroll.HoldsNothing(node) && !EnterNodeReroll.Opened(node) && SecretCards.In(node).Count == 0;
@@ -570,7 +691,8 @@ namespace WildfrostArchipelago
         // when it runs out. Vanilla pools are big enough that this rarely happens; AP pools of a few
         // cards would offer the same cards at every node. So under AP a card pool is only shuffled
         // in once per run, and each card is offered at most once (cards received mid-run are added
-        // to the deck by AddToDeck). Modifier pools (boss rewards) refill as usual.
+        // to the deck by AddToDeck). Modifier pools (the boss reward bells) refill as usual, but
+        // without the bells this run has already shown (PoolRefill.Postfix).
         private static readonly ConditionalWeakTable<CharacterRewards.Pool, object> shuffledIn =
             new ConditionalWeakTable<CharacterRewards.Pool, object>();
 
@@ -586,6 +708,21 @@ namespace WildfrostArchipelago
                 if (shuffledIn.TryGetValue(__instance, out _)) return false;
                 shuffledIn.Add(__instance, null);
                 return true;
+            }
+
+            // A bell pool that ran out was shuffled in whole again, and a boss offered a bell an
+            // earlier boss had shown (Noomlin twice, 2026-11-02). Those stay out unless every bell
+            // has been shown.
+            private static void Postfix(CharacterRewards.Pool __instance)
+            {
+                if (!ApMode.Active || IsCardPool(__instance)) return;
+                var deck = Deck(__instance);
+                if (deck == null || deck.Count == 0) return;
+                var seen = CardsGivenOut(shownOnly: true);
+                var shown = deck.Where(f => f != null && seen.Contains(f.name)).ToList();
+                if (shown.Count == 0 || shown.Count == deck.Count) return;
+                foreach (var file in shown) deck.Remove(file);
+                ArchipelagoMod.Client?.LogDebug($"Boss reward pool refilled without {shown.Count} already shown");
             }
         }
 
@@ -627,7 +764,7 @@ namespace WildfrostArchipelago
             {
                 rewards.Populate(classData);
                 rewards.RemoveLockedCards();
-                var seen = CardsGivenOut();
+                var seen = CardsGivenOut(shownOnly: true);
                 pools = PoolLookup(rewards);
                 foreach (var pool in pools?.Values ?? Enumerable.Empty<CharacterRewards.Pool>())
                 {
@@ -639,10 +776,11 @@ namespace WildfrostArchipelago
             return rewards;
         }
 
-        // Names of the cards this run has already shown: the deck (and its charms) and what every
-        // map node holds, whatever shape its data takes (card lists, shop stock, single names,
-        // boss rewards).
-        private static HashSet<string> CardsGivenOut()
+        // Names of the cards this run has given out: the deck (and its charms) and what the map nodes
+        // hold, whatever shape their data takes (card lists, shop stock, single names, boss rewards).
+        // shownOnly: just the nodes that drew on entry (or were opened or cleared); the others' rolls
+        // went back into the deck.
+        private static HashSet<string> CardsGivenOut(bool shownOnly = false)
         {
             var names = new HashSet<string>();
             var inventory = References.PlayerData?.inventory;
@@ -658,6 +796,7 @@ namespace WildfrostArchipelago
             foreach (var node in Campaign.instance?.nodes ?? new List<CampaignNode>())
             {
                 if (node?.data == null) continue;
+                if (shownOnly && !node.cleared && !node.data.ContainsKey(DrawnKey) && !EnterNodeReroll.Opened(node)) continue;
                 foreach (var value in node.data.Values) CollectNames(value, names, 0);
             }
             return names;
@@ -696,17 +835,18 @@ namespace WildfrostArchipelago
         }
 
         /// <summary>
-        /// A re-rolled node's cards go back into the deck before it draws again: it was never opened,
-        /// so they were never seen. Without that, a node whose deck had run dry since it rolled threw
-        /// its cards away and gave Bling (seen 2026-10-31). Only for pools already shuffled in; the
-        /// others still hold every card for their first draw.
+        /// Cards a node rolled with the map go back into the deck at once: it hasn't shown them, and it
+        /// draws again when entered. Only for card pools already shuffled in (the others still hold
+        /// every card for their first draw) and for the bell pools, which vanilla shuffles in itself.
+        /// Bells drawn at setup used to stay out, and with each boss drawing twice the bell pool ran
+        /// out and was shuffled in whole again (2026-11-02).
         /// </summary>
         private static void ReturnToDeck(CharacterRewards rewards, HashSet<string> names)
         {
             if (names.Count == 0) return;
             foreach (var pool in PoolLookup(rewards)?.Values ?? Enumerable.Empty<CharacterRewards.Pool>())
             {
-                if (!shuffledIn.TryGetValue(pool, out _)) continue;
+                if (IsCardPool(pool) && !shuffledIn.TryGetValue(pool, out _)) continue;
                 var deck = Deck(pool);
                 foreach (var file in pool.list?.Where(f => f != null && names.Contains(f.name)).Distinct().ToList() ?? new List<DataFile>())
                 {
@@ -814,6 +954,81 @@ namespace WildfrostArchipelago
             }
         }
 
+        // The same panel fills one challenge at a time, about 2.5 to 4.5 seconds each, and the end
+        // screen waits for it. Under AP every challenge is open from the start, so a run moves many
+        // of them and the screen took a minute or more (2026-11-03). The same sequence with shorter
+        // timings: a 1.5s fill, so the bar reads before it says check sent (the user's call), a short
+        // hold on completed ones, and almost no gap between them.
+        [HarmonyPatch(typeof(ChallengeProgressSequence), nameof(ChallengeProgressSequence.Start))]
+        private static class FastTownProgress
+        {
+            private const float Gap = 0.05f, FillTime = 1.5f, CompletedHold = 0.5f;
+
+            private static readonly AccessTools.FieldRef<ChallengeProgressSequence, ChallengeProgressDisplay> Prefab =
+                AccessTools.FieldRefAccess<ChallengeProgressSequence, ChallengeProgressDisplay>("progressPrefab");
+            private static readonly AccessTools.FieldRef<ChallengeProgressSequence, UnityEngine.Transform> Group =
+                AccessTools.FieldRefAccess<ChallengeProgressSequence, UnityEngine.Transform>("progressGroup");
+            private static readonly AccessTools.FieldRef<ChallengeProgressSequence, List<ChallengeProgressDisplay>> Panels =
+                AccessTools.FieldRefAccess<ChallengeProgressSequence, List<ChallengeProgressDisplay>>("panels");
+            private static readonly MethodInfo SetRunning = AccessTools.PropertySetter(typeof(ChallengeProgressSequence), "running");
+            private static readonly MethodInfo UpdatePanelPositions = AccessTools.Method(typeof(ChallengeProgressSequence), "UpdatePanelPositions");
+
+            private static bool Prefix(ChallengeProgressSequence __instance, ref IEnumerator __result)
+            {
+                if (!ApMode.Active || SetRunning == null || UpdatePanelPositions == null) return true;
+                __result = Run(__instance);
+                return false;
+            }
+
+            private static IEnumerator Run(ChallengeProgressSequence sequence)
+            {
+                SetRunning.Invoke(sequence, new object[] { true });
+                try
+                {
+                    var moved = UnityEngine.Object.FindObjectOfType<ChallengeProgressSystem>()?.progress?
+                        .Where(p => p.currentValue > p.originalValue).ToList() ?? new List<ChallengeProgress>();
+                    foreach (var progress in moved)
+                    {
+                        yield return AddDisplay(sequence, progress);
+                        yield return new UnityEngine.WaitForSeconds(Gap);
+                    }
+                }
+                finally
+                {
+                    SetRunning.Invoke(sequence, new object[] { false });
+                }
+            }
+
+            private static IEnumerator AddDisplay(ChallengeProgressSequence sequence, ChallengeProgress progress)
+            {
+                var challenge = AddressableLoader.Get<ChallengeData>("ChallengeData", progress.challengeName);
+                if (challenge == null) yield break;
+                var panel = UnityEngine.Object.Instantiate(Prefab(sequence), Group(sequence));
+                Panels(sequence).Insert(0, panel);
+                UpdatePanelPositions.Invoke(sequence, null);
+                panel.Assign(challenge);
+                panel.SetFill(progress.originalValue, challenge.goal);
+
+                int fillTo = System.Math.Min(challenge.goal, progress.currentValue);
+                Events.InvokeProgressStart(UnityEngine.Mathf.Clamp01((float)progress.originalValue / challenge.goal));
+                panel.animator.SetBool("Increasing", true);
+                LeanTween.value(panel.gameObject, progress.originalValue, fillTo, FillTime).setEaseOutQuad()
+                    .setOnUpdate((float value) =>
+                    {
+                        panel.SetFill(value, challenge.goal);
+                        panel.SetRemainingText(challenge, value);
+                    });
+                yield return new UnityEngine.WaitForSeconds(FillTime);
+                panel.animator.SetBool("Increasing", false);
+                Events.InvokeProgressStop();
+                if (fillTo < challenge.goal) yield break;
+                Events.InvokeProgressDing();
+                panel.animator.SetTrigger("Ping");
+                panel.SetRewardText(challenge);
+                yield return new UnityEngine.WaitForSeconds(CompletedHold);
+            }
+        }
+
         // Bell levels come from Progressive Storm Bells (ApMode.ApplyStormBells), not from wins.
         // This also skips gilding the bells used in a True Final Boss win, which in vanilla is what
         // unlocks Overcrank.
@@ -838,14 +1053,18 @@ namespace WildfrostArchipelago
         // force_overcrank: and, with every bell level, once the Overcrank lever is pulled.
         // The bells are set on the selection screen itself, so that is where it's checked: when a
         // leader is picked, and again when the screen begins the run.
-        private static string StormPointsShortfall()
+        // The forced level follows the picked leader's tribe's packs (ApMode.ForcedBells).
+        private static string StormPointsShortfall(CharacterSelectScreen screen)
         {
             if (!ApMode.Active) return null;
-            int need = ApMode.RequiredStormPoints;
+            var leader = Traverse.Create(screen).Field("leaderSelection").GetValue<SelectLeader>()?.current;
+            string clan = leader?.data?.classData?.name;
+            if (clan == null) return null;
+            int need = ApMode.RequiredStormPoints(clan);
             int have = need == 0 ? 0 : StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells());
-            if (have < need) return $"This seed plays every run at full storm strength. Ring storm bells worth {need} points before starting (now {have}).";
-            if (ApMode.RequiresOvercrank && !SaveSystem.LoadProgressData("stormPointOvercrank", false))
-                return "This seed plays every run Overcranked. Pull the Overcrank lever before starting.";
+            if (have < need) return $"This seed plays runs at full storm strength, as far as this tribe's packs carry it. Ring storm bells worth {need} points before starting (now {have}).";
+            if (ApMode.RequiresOvercrank(clan) && !SaveSystem.LoadProgressData("stormPointOvercrank", false))
+                return "This seed plays runs Overcranked once a tribe's packs carry it. Pull the Overcrank lever before starting.";
             return null;
         }
 
@@ -869,7 +1088,7 @@ namespace WildfrostArchipelago
             {
                 var pets = Traverse.Create(__instance).Field("petSelection").GetValue<SelectStartingPet>();
                 if (pets == null || pets.running || pets.selectedPetIndex >= 0) return true;
-                string shortfall = StormPointsShortfall();
+                string shortfall = StormPointsShortfall(__instance);
                 if (shortfall == null) return true;
                 __instance.StartCoroutine(ShowPrompt(shortfall));
                 return false;
@@ -882,7 +1101,7 @@ namespace WildfrostArchipelago
         {
             private static bool Prefix(CharacterSelectScreen __instance, ref IEnumerator __result)
             {
-                string shortfall = StormPointsShortfall();
+                string shortfall = StormPointsShortfall(__instance);
                 if (shortfall == null) return true;
                 __result = ShowPrompt(shortfall);
                 // Continue has already closed the pet picker, and Back has no step for that state,
@@ -1092,8 +1311,9 @@ namespace WildfrostArchipelago
             private static void Postfix(CharacterRewards __instance)
             {
                 if (!ApMode.Active || __instance != RunRewards()) return;
-                if (!(AccessTools.Field(typeof(CharacterRewards), "poolLookup")?.GetValue(__instance) is IDictionary<string, CharacterRewards.Pool> pools)) return;
-                string sizes = string.Join(", ", pools.Select(p => $"{p.Key} {Traverse.Create(p.Value).Property("list").GetValue<List<DataFile>>()?.Count}"));
+                var pools = PoolLookup(__instance);
+                if (pools == null) return;
+                string sizes = string.Join(", ", pools.Select(p => $"{p.Key} {p.Value.list?.Count}"));
                 ArchipelagoMod.Client?.LogDebug("Run reward pools: " + sizes);
             }
         }

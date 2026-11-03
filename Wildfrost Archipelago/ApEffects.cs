@@ -16,7 +16,7 @@ namespace WildfrostArchipelago
         private const string HandledKey = "apEffectsHandled";
         private const string PendingKey = "apEffectsPending";
         private const int BlingMin = 25, BlingMax = 50;
-        private const float SlapcrackersHitDelay = 0.75f;
+        private const float SlapcrackersHitDelay = 0.66f;
 
         private static readonly Dictionary<string, string> Descriptions = new Dictionary<string, string>
         {
@@ -109,17 +109,39 @@ namespace WildfrostArchipelago
             ArchipelagoMod.Client?.Log(gain ? $"Bling: +{amount}" : $"Bling Thief Trap: -{amount} Bling");
         }
 
+        // Several effects queue at once, and one can end the battle (a trap killing the leader); the
+        // rest then ran on through the battle's end, killing and moving units the game was already
+        // clearing away, and unloading the battle threw (2026-11-03). Those wait for the next battle.
+        // The leader's death only ends the battle once the game gets to it, and a second trap started
+        // in between and was used up on nothing (2026-11-03).
+        private static bool Over(Battle battle) =>
+            Battle.instance != battle || battle.phase != Battle.Phase.Play || !Units(battle.player).Any(IsLeader);
+
+        private static bool IsLeader(Entity entity) => entity.data?.cardType?.name == "Leader";
+
+        private static void Requeue(string key)
+        {
+            if (pending == null) return;
+            pending.Add(key);
+            Save();
+        }
+
         private static IEnumerator Run(string key)
         {
             var battle = Battle.instance;
-            if (battle == null) yield break;
+            if (battle == null || Over(battle))
+            {
+                Requeue(key);
+                yield break;
+            }
             Announce(key);
+            bool landed = false;
             switch (key)
             {
-                case "trap:slapcrackers": yield return Slapcrackers(battle.player); break;
-                case "boon:slapcrackers": yield return Slapcrackers(battle.enemy); break;
-                case "trap:berry_bell": AddHealth(RandomRow(battle.enemy), 1); break;
-                case "boon:pinkberry": AddHealth(Pick(Units(battle.player)), 4); break;
+                case "trap:slapcrackers": yield return Slapcrackers(battle, battle.player, () => landed = true); break;
+                case "boon:slapcrackers": yield return Slapcrackers(battle, battle.enemy, () => landed = true); break;
+                case "trap:berry_bell": AddHealth(RandomRow(battle.enemy, HasHealth).Where(HasHealth), 1); break;
+                case "boon:pinkberry": AddHealth(Pick(Units(battle.player).Where(HasHealth)), 4); break;
                 case "trap:demonize": yield return Status(Pick(Units(battle.player)), "demonize", "Demonize"); break;
                 case "boon:demonize": yield return Status(Pick(Units(battle.enemy)), "demonize", "Demonize"); break;
                 case "trap:teeth": yield return Status(Pick(Units(battle.enemy)), "teeth", "Teeth"); break;
@@ -131,7 +153,9 @@ namespace WildfrostArchipelago
             // The game moves units up into empty slots at the end of each turn (Battle.UpdateBoard).
             // These effects come between turns, so without this a unit they killed left a gap until
             // the player's next card.
-            if (Battle.instance != battle) yield break;
+            // A Slapcrackers counts as used once any of its hits lands; one that landed none waits.
+            if (key.EndsWith(":slapcrackers") && !landed) Requeue(key);
+            if (Over(battle)) yield break;
             foreach (var side in new[] { battle.enemy, battle.player })
             {
                 if (UpdateBoard.Invoke(battle, new object[] { side }) is IEnumerator update) yield return update;
@@ -156,11 +180,17 @@ namespace WildfrostArchipelago
             return list.Count == 0 ? null : list[UnityEngine.Random.Range(0, list.Count)];
         }
 
-        private static List<Entity> RandomRow(Character owner)
+        /// <summary>A random row of the side's units; with a filter, only a row holding a unit that passes it.</summary>
+        private static List<Entity> RandomRow(Character owner, System.Func<Entity, bool> needs = null)
         {
-            var rows = Units(owner).GroupBy(e => Battle.instance.GetRowIndices(e).FirstOrDefault()).ToList();
+            var rows = Units(owner).GroupBy(e => Battle.instance.GetRowIndices(e).FirstOrDefault())
+                .Where(row => needs == null || row.Any(needs)).ToList();
             return rows.Count == 0 ? new List<Entity>() : rows[UnityEngine.Random.Range(0, rows.Count)].ToList();
         }
+
+        // Clunkers that only have Scrap have no health to raise (seen by players, 2026-11-02): health
+        // effects pick a unit, or a row, that has some.
+        private static bool HasHealth(Entity entity) => entity.data != null && entity.data.hasHealth;
 
         // Bosses, small bosses (Frost Guardian, Bam/Boo) and minibosses (leaders) are never picked.
         private static bool IsBossLike(Entity entity)
@@ -171,15 +201,17 @@ namespace WildfrostArchipelago
 
         // Aimless: each of the four hits picks a unit in the row anew. No attacker, so nothing
         // retaliates (Teeth and the like hit back at the attacker).
-        private static IEnumerator Slapcrackers(Character owner)
+        private static IEnumerator Slapcrackers(Battle battle, Character owner, System.Action landed)
         {
             var row = RandomRow(owner);
             for (int i = 0; i < 4; i++)
             {
+                if (Over(battle)) yield break;
                 var target = Pick(row.Where(e => e != null && e.IsAliveAndExists()));
                 if (target == null) yield break;
                 // Spaced out like the card's own hits, so each one reads on its own.
                 if (i > 0) yield return new UnityEngine.WaitForSeconds(SlapcrackersHitDelay);
+                landed();
                 yield return new Hit(null, target, 1) { canRetaliate = false }.Process();
             }
         }
