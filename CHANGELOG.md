@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Logic:** Kill 15 enemies with Shroom and Apply 60 Shell need Snowdwellers, whose leaders bring Shroom and Shell.
+- **Mods:** turning mods on or off while playing a seed also saves them to your own profile, so they stay that way on the next launch.
+
+## 0.2.1 (2026-11-04)
+
+Seeds made with 0.2.0 still work, and the 0.2.0 `wildfrost.apworld` is still current.
+
+- **Fixes:**
+  - A crash when connecting to a seed you'd already played and receiving items.
+  - Pressing Enter to continue on the connect popup left the popup open in town.
+
 ## 0.2.0 (2026-11-03)
 
 Seeds made with 0.1.0 don't work with this version. Generate a new seed with the new `wildfrost.apworld`.

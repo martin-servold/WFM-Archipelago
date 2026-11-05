@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Deadpan.Enums.Engine.Components.Modding;
 using HarmonyLib;
 using UnityEngine;
 
@@ -64,6 +66,36 @@ namespace WildfrostArchipelago
                 }
             }
             return string.Join(", ", reloaded);
+        }
+    }
+
+    /// <summary>
+    /// The enabled mods are saved per profile ("lastSavedMods" in Save.sav), but the game only reads
+    /// them at startup, which is always on the player's own profile (the seed's profile is never
+    /// remembered). So mods turned on or off on a seed's profile are also saved to the player's own,
+    /// or the next launch would undo them (decided by the user 2026-11-05).
+    /// </summary>
+    [HarmonyPatch(typeof(WildfrostMod), "SetLastMods")]
+    internal static class LastModsToOwnProfile
+    {
+        private static void Postfix(WildfrostMod[] enabled)
+        {
+            string own = ApMode.ReturnProfile;
+            if (!ApMode.Active || own == null || enabled == null) return;
+            try
+            {
+                // Saver.SaveValue takes the folder, so this writes the other profile's Save.sav
+                // without switching to it.
+                var saver = AccessTools.Field(typeof(SaveSystem), "progressSaver").GetValue(null);
+                var save = AccessTools.Method(saver.GetType(), "SaveValue").MakeGenericMethod(typeof(string[]));
+                string[] guids = enabled.Select(m => m.GUID).ToArray();
+                save.Invoke(saver, new object[] { "lastSavedMods", guids, SaveSystem.profileFolder + "/" + own, "" });
+                ArchipelagoMod.Client?.LogDebug($"Enabled mods also saved to profile {own}");
+            }
+            catch (Exception e)
+            {
+                ArchipelagoMod.Client?.LogDebug($"Couldn't save the enabled mods to profile {own}: {e.Message}");
+            }
         }
     }
 }

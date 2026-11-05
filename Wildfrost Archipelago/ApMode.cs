@@ -41,6 +41,9 @@ namespace WildfrostArchipelago
         private static Dictionary<string, string> cardTitles;
         private static Dictionary<ChallengeData, ChallengeData[]> savedRequires;
         private static string returnProfile;
+
+        /// <summary>The player's own profile, which the seed's profile was switched from (null when not switched).</summary>
+        public static string ReturnProfile => returnProfile;
         private static bool switchPending;
         private static List<string> grantedUnlocks;
         // Progressive items arrive once per copy under the same key, and a reconnect resends every
@@ -215,12 +218,20 @@ namespace WildfrostArchipelago
         {
             if (cardTitles == null)
             {
-                cardTitles = new Dictionary<string, string>();
-                foreach (var c in AddressableLoader.GetGroup<CardData>("CardData")) cardTitles[c.name] = c.title;
-                foreach (var u in AddressableLoader.GetGroup<CardUpgradeData>("CardUpgradeData")) cardTitles[u.name] = u.title;
+                // Some upgrades (crowns, tokens) have no title string, and their getter throws.
+                var titles = new Dictionary<string, string>();
+                foreach (var c in AddressableLoader.GetGroup<CardData>("CardData")) titles[c.name] = SafeTitle(() => c.title);
+                foreach (var u in AddressableLoader.GetGroup<CardUpgradeData>("CardUpgradeData")) titles[u.name] = SafeTitle(() => u.title);
+                cardTitles = titles;
             }
             string name = cardKey.Substring("card:".Length);
             return cardTitles.TryGetValue(name, out string title) && !string.IsNullOrEmpty(title) ? title : name;
+        }
+
+        private static string SafeTitle(System.Func<string> title)
+        {
+            try { return title(); }
+            catch (System.Exception) { return null; }
         }
 
         /// <summary>Called every frame. Profiles may only change on the main menu, with no run loaded.</summary>

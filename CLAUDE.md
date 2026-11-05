@@ -40,6 +40,6 @@ The client only applies AP rules while this slot's own profile, `Archipelago_<sl
   cd ../Archipelago && .venv/bin/python Launcher.py "Build APWorlds" -- --skip_open_folder Wildfrost
   cp build/apworlds/wildfrost.apworld ../WFM-Archipelago/dist/
   ```
-  Bump `world_version` in `apworld/wildfrost/archipelago.json` for each release.
+  Versions are `final.apworld.mod` (the user's scheme): the first number marks final releases, the second is the apworld version and the third a non-breaking mod update. Bump `world_version` in `apworld/wildfrost/archipelago.json` only when the apworld changes, and keep the client's first two numbers equal to it (client 0.2.1 goes with apworld 0.2.0).
 - `apworld/wildfrost/data.py` is generated. After the game writes a new `content_dump.txt` (on every mod load with `debug=true` in config.cfg), copy it to `data/` and run `python3 -I tools/gen_data.py`. IDs are frozen: existing keys keep their ID, and new ones are appended. Never renumber.
 - Locations and items are matched by **key** (`battle:<areaIndex>:<BattleData>:<ClassData>`, `challenge:<ChallengeData>`, `card:<CardData>`, ...), which `fill_slot_data` sends to the client. Display names can change without breaking the client.

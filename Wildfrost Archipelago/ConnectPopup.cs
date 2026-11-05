@@ -13,14 +13,16 @@ namespace WildfrostArchipelago
     /// </summary>
     internal class ConnectPopup : MonoBehaviour
     {
-        public static bool IsOpen => instance != null && instance.open;
+        // Still counts as open on the frame it closes: Enter closes it from OnGUI, the game's input
+        // comes back on in the same frame, and the menu would read that Enter as another Play.
+        public static bool IsOpen => instance != null && (instance.open || instance.closedFrame == Time.frameCount);
 
         private static ConnectPopup instance;
         // Set while the popup re-runs Play, so the gate lets it through.
         private static bool passThrough;
 
         private bool open, connecting;
-        private int loginsAtConnect;
+        private int loginsAtConnect, closedFrame = -1;
         private MainMenu menu;
         private string server = "", slot = "", password = "";
         private GUIStyle label, field, button;
@@ -48,6 +50,7 @@ namespace WildfrostArchipelago
         private void Close()
         {
             open = connecting = false;
+            closedFrame = Time.frameCount;
             GameInput.Unblock();
         }
 
@@ -200,7 +203,7 @@ namespace WildfrostArchipelago
                     if (ApMode.Active) CompatCheck.Run(ArchipelagoMod.Client);
                     return true;
                 }
-                if (!instance.open) instance.Show(__instance);
+                if (!IsOpen) instance.Show(__instance);
                 return false;
             }
         }

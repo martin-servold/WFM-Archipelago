@@ -20,8 +20,11 @@ CHALLENGE_TRIBE = {
 }
 # Challenges done with a tribe's own cards (decided by the user 2026-10-31): Ritual's sacrifice
 # cards and Summon 50 allies are Shademancer play, Add 10 Scrap a Clunkmaster run, and Block 10
-# hits with Clunkers uses Woodhead from the Snowdweller starting deck.
+# hits with Clunkers uses Woodhead from the Snowdweller starting deck. Kill 15 with Shroom and Apply
+# 60 Shell use the Snowdweller leaders, who come with Shroom or Shell (decided by the user 2026-11-04).
 CHALLENGE_NEEDS_TRIBE = {
+    "Challenge Event 2": "Basic",
+    "Challenge Item 5": "Basic",
     "Challenge Item 4": "Basic",
     "Challenge Charm 8": "Basic",  # One Punch: the Scrappy Sword is a Snowdweller starting card
     "Challenge Charm 6": "Magic",
