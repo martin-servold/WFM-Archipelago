@@ -474,6 +474,7 @@ namespace WildfrostArchipelago
             {
                 var was = node.data.TryGetValue(WasKey, out object name) ? FindNodeType(name as string) : null;
                 var secrets = SecretCards.In(node);
+                string crown = ShopCrown(node);
                 // SetUp replaces node.data; clearing it first keeps old keys from leaking into one that adds.
                 node.data.Clear();
                 if (was != null) SwapType(node, was);
@@ -495,6 +496,7 @@ namespace WildfrostArchipelago
                     EmptyPoolNodes.KeepType = EmptyPoolNodes.AtEntry = false;
                 }
                 yield return setUp;
+                KeepShopCrown(node, crown);
                 foreach (string card in secrets) SecretCards.PutBack(node, card, "Kept {0} in the re-rolled node");
                 SecretCards.Repair(node);
                 yield return AnnounceBling(node, enter);
@@ -504,6 +506,7 @@ namespace WildfrostArchipelago
             private static void DrawBossRewards(CampaignNode node)
             {
                 EnsurePools();
+                string crown = BossCrown(node);
                 node.data.Remove("rewards");
                 EmptyPoolNodes.AtEntry = true;
                 try
@@ -514,6 +517,38 @@ namespace WildfrostArchipelago
                 {
                     EmptyPoolNodes.AtEntry = false;
                 }
+                KeepBossCrown(node, crown);
+            }
+
+            // The cursed crowns storm bell (ScriptCurseCrowns) curses crowns once the map is made: a
+            // boss's crown reward (BossRewardDataCrown upgradeDataName) and a shop's crown (ShopRoutine
+            // crownType). Drawing on entry rolled both again, and a fresh roll is a plain Crown, so
+            // cursed crowns never turned up under AP (found by the user 2026-11-07). The crown the map
+            // gave the node is kept through the draw.
+            private static BossRewardDataCrown.Data CrownReward(CampaignNode node) =>
+                node.data.TryGetValue("rewards", out object value) && value is CampaignNodeTypeBoss.RewardData rewards
+                    ? rewards.rewards?.OfType<BossRewardDataCrown.Data>().FirstOrDefault()
+                    : null;
+
+            private static string BossCrown(CampaignNode node) => CrownReward(node)?.upgradeDataName;
+
+            private static void KeepBossCrown(CampaignNode node, string crown)
+            {
+                var reward = CrownReward(node);
+                if (string.IsNullOrEmpty(crown) || reward == null || reward.upgradeDataName == crown) return;
+                ArchipelagoMod.Client?.LogDebug($"Kept the boss's {crown} through the draw (was {reward.upgradeDataName})");
+                reward.upgradeDataName = crown;
+            }
+
+            private static string ShopCrown(CampaignNode node) =>
+                node.data.TryGetValue("shopData", out object value) && value is ShopRoutine.Data shop ? shop.crownType : null;
+
+            private static void KeepShopCrown(CampaignNode node, string crown)
+            {
+                if (string.IsNullOrEmpty(crown) || node.data == null || !node.data.TryGetValue("shopData", out object value)
+                    || !(value is ShopRoutine.Data shop) || shop.crownType == crown) return;
+                ArchipelagoMod.Client?.LogDebug($"Kept the shop's {crown} through the re-roll (was {shop.crownType})");
+                shop.crownType = crown;
             }
 
             private static IEnumerator AnnounceBling(CampaignNode node, IEnumerator enter)

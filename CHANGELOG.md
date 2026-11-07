@@ -12,6 +12,7 @@ Install the new `wildfrost.apworld` to make seeds with the new options. Seeds ma
 - **Disable Possessed Final Boss** (new option, off by default): the Final Boss always fights with its default deck instead of your last winning deck.
 - **Possessed Final Boss companions:** after a win, the base game stops offering the companions in your winning deck while they're on the boss. Seeds no longer do that, so every companion you have the pack for can turn up.
 - **Fix:** Reroll leaders is hidden while a leader is picked, where rerolling jumbled the cards, and while the storm bell window is open.
+- **Fix:** the cursed crowns storm bell never showed its cursed crowns. Bosses and shops draw their rewards when you enter them, and that draw replaced the cursed crown with a plain one. They now keep the crown the map gave them.
 - **Fix:** the Final Boss's reward bells could repeat bells offered or taken at an earlier boss. It now picks its rewards when you enter it, like the other bosses.
 - **Checks tab:** a check and its "#2" twin (bosses, charm challenges) share one line, marked "(2 checks)".
 - **Run summary:** each run ends with a line in the log: the bells, the packs and charms the tribe had, and how far it got.
