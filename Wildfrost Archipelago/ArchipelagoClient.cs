@@ -180,10 +180,14 @@ namespace WildfrostArchipelago
         private volatile Dictionary<string, JToken> locationRules;
         private volatile Dictionary<string, string> locationNames;
         private volatile Dictionary<string, string> itemNames;
-        private volatile bool forceStormBells;
+        private volatile int forceStormPoints;
         private volatile bool forceOvercrank;
+        private volatile bool reverseBells;
+        private volatile int stormBellLevels = 7;
         private volatile bool gameSpeedUp;
         private volatile bool leaderReroll;
+        private volatile bool noPossessedFinalBoss;
+        private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
         private volatile bool deathLinkOn;
         private DeathLinkService deathLink;
@@ -268,7 +272,7 @@ namespace WildfrostArchipelago
         /// <summary>Every item key in the seed (slot_data "item_keys").</summary>
         public IEnumerable<string> ItemKeyValues => itemKeys?.Values ?? Enumerable.Empty<string>();
         public Dictionary<string, List<string>> Packs => packs;
-        /// <summary>slot_data "goal": 0 win each clan, 1 True Final Boss each clan, 2 Overcranked True Final Boss each clan.</summary>
+        /// <summary>slot_data "goal": 0 Final Boss, 1 True Final Boss, 2 Overcranked True Final Boss (each clans_required clan).</summary>
         public int Goal => goal;
         /// <summary>slot_data "clans_required": how many clans need a qualifying win (3 in older seeds).</summary>
         public int ClansRequired => clansRequired;
@@ -299,17 +303,36 @@ namespace WildfrostArchipelago
             public List<Dictionary<string, int>> Alternatives;
         }
 
-        /// <summary>slot_data "force_storm_bells": runs must start at the full storm point limit.</summary>
-        public bool ForceStormBells => forceStormBells;
+        /// <summary>
+        /// slot_data "force_storm_bells_up_to": the most storm points runs must start with (the limit
+        /// or this, whichever is lower), 0 for none; 22 also forces Overcrank. Seeds from before it had
+        /// two toggles, "force_storm_bells" (the full limit) and "force_overcrank", read as 20 and the flag.
+        /// </summary>
+        public int ForceStormPoints => forceStormPoints;
 
-        /// <summary>slot_data "force_overcrank": with every bell level, runs must start Overcranked.</summary>
+        /// <summary>With every bell level, runs must start Overcranked (force_storm_bells_up_to 22, or older seeds' force_overcrank).</summary>
         public bool ForceOvercrank => forceOvercrank;
+
+        /// <summary>slot_data "progression_direction" 1 ("storm_bells" in seeds before 0.3.0): Reverse Storm Bells, from Overcranked down to no bells.</summary>
+        public bool ReverseBells => reverseBells;
+
+        /// <summary>
+        /// slot_data "storm_bell_levels": Progressive Storm Bell levels in the seed. Older seeds don't
+        /// send it and have 7 (5 storm points, up to 10, Overcrank).
+        /// </summary>
+        public int StormBellLevels => stormBellLevels;
 
         /// <summary>slot_data "game_speed_up": F6 may speed the game up.</summary>
         public bool GameSpeedUp => gameSpeedUp;
 
         /// <summary>slot_data "leader_reroll": unlimited leader rerolls (off in older seeds).</summary>
         public bool LeaderReroll => leaderReroll;
+
+        /// <summary>slot_data "disable_possessed_final_boss": the Final Boss keeps its default deck (off in older seeds).</summary>
+        public bool NoPossessedFinalBoss => noPossessedFinalBoss;
+
+        /// <summary>slot_data "death_link_damage_percent": a received death's hit on the leader, % of max health (100 in older seeds).</summary>
+        public int DeathLinkDamagePercent => deathLinkDamagePercent;
 
         /// <summary>
         /// Whether Snowdwellers is a tribe item too (slot_data "starting_tribe"; seeds from before that
@@ -526,12 +549,26 @@ namespace WildfrostArchipelago
             locationRules = slotData.TryGetValue("location_rules", out object rules) && rules is JObject ruleObject
                 ? ruleObject.Properties().ToDictionary(p => p.Name, p => p.Value)
                 : new Dictionary<string, JToken>();
-            forceStormBells = slotData.TryGetValue("force_storm_bells", out object force) && Convert.ToBoolean(force);
-            forceOvercrank = slotData.TryGetValue("force_overcrank", out object overcrank) && Convert.ToBoolean(overcrank);
+            if (slotData.TryGetValue("force_storm_bells_up_to", out object upTo))
+            {
+                int points = Convert.ToInt32(upTo);
+                forceStormPoints = Math.Min(points, 20);
+                forceOvercrank = points >= 22;
+            }
+            else
+            {
+                forceStormPoints = slotData.TryGetValue("force_storm_bells", out object force) && Convert.ToBoolean(force) ? 20 : 0;
+                forceOvercrank = slotData.TryGetValue("force_overcrank", out object overcrank) && Convert.ToBoolean(overcrank);
+            }
+            reverseBells = (slotData.TryGetValue("progression_direction", out object direction) || slotData.TryGetValue("storm_bells", out direction))
+                           && Convert.ToInt32(direction) == 1;
+            stormBellLevels = slotData.TryGetValue("storm_bell_levels", out object levels) ? Convert.ToInt32(levels) : 7;
             gameSpeedUp = slotData.TryGetValue("game_speed_up", out object speedUp) && Convert.ToBoolean(speedUp);
             leaderReroll = slotData.TryGetValue("leader_reroll", out object reroll) && Convert.ToBoolean(reroll);
+            noPossessedFinalBoss = slotData.TryGetValue("disable_possessed_final_boss", out object possessed) && Convert.ToBoolean(possessed);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);
+            deathLinkDamagePercent = slotData.TryGetValue("death_link_damage_percent", out object damage) ? Convert.ToInt32(damage) : 100;
             return true;
         }
 

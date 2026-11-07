@@ -26,9 +26,34 @@ namespace WildfrostArchipelago
         private static List<ClassData> tribes;
 
         /// <summary>Whether the leader choice is on screen and can be rerolled now (the button shows).</summary>
+        // Not while a leader is picked, shown up close with "Let's Go" (the leaders' selectionSequence):
+        // rerolling then dealt new cards while the picked one was out of its place, and they landed
+        // jumbled (reported by the user 2026-11-05). SelectLeader.current doesn't do: the X leaves it set.
         public static bool Showing =>
             ApMode.Active && ApMode.LeaderRerollOn && leaders != null && screen != null
-            && leaders.running && leaders.isActiveAndEnabled && !PetPickerOpen;
+            && leaders.running && leaders.isActiveAndEnabled && !LeaderPicked && !PetPickerOpen && !BellWindowOpen;
+
+        // The storm bell window over the leader screen (the user, 2026-11-06: hide the pill there).
+        // The game keeps no open flag (the scene wires the button). Opening it switches on "Storm
+        // Bell Screen", next to the StormBellManager under Canvas/SafeArea, and closing it switches it
+        // off; the manager itself stays active at mid-screen either way (logged in game 2026-11-06).
+        private static GameObject bellScreen;
+
+        private static bool BellWindowOpen
+        {
+            get
+            {
+                if (bellScreen == null)
+                {
+                    var bells = Object.FindObjectOfType<StormBellManager>();
+                    bellScreen = bells?.transform.parent?.Find("Storm Bell Screen")?.gameObject;
+                }
+                return bellScreen != null && bellScreen.activeInHierarchy;
+            }
+        }
+
+        private static bool LeaderPicked =>
+            Traverse.Create(leaders).Field("selectionSequence").GetValue<UISequence>()?.IsRunning == true;
 
         public static void Try()
         {

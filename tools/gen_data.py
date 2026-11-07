@@ -202,7 +202,7 @@ def main():
     for k in charm_keys:
         _, clan, card = k.split(":")
         items.append((k, title_of[f"card:{card}"], item_ids[k], {"kind": "Charm", "clan": clan, "card": f"card:{card}"}))
-    # One copy per bell level: unlocks the bells (5 storm points), raises the cap to 10, Overcrank.
+    # One copy per bell level (items.STORM_BELL_LEVELS): storm point caps 2, 4, ... 20, then Overcrank.
     items.append(("storm_bell", "Progressive Storm Bell", item_ids["storm_bell"], {"kind": "StormBell"}))
     items.append(("bling", "Bling", item_ids["bling"], {"kind": "Filler"}))
     items += [(k, n, item_ids[k], {"kind": "Trap"}) for k, n in TRAPS.items()]

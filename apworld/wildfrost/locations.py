@@ -31,7 +31,7 @@ CHALLENGE_REGION = {
 }
 
 # The goal is a winning run per clan (what counts as winning depends on the goal option). Each is
-# an event location holding a "Victory"; the seed is done with as many as Clans Required asks for.
+# an event location holding a "Victory"; the seed is done with as many as Goal Clans Required asks for.
 CLANS = {"Basic": "Snowdwellers", "Magic": "Shademancers", "Clunk": "Clunkmasters"}
 VICTORY_ITEM = "Victory"
 
@@ -52,7 +52,7 @@ def region_for(key: str, info: dict) -> str:
 
 def included(world: WildfrostWorld, info: dict) -> bool:
     """The True Final Boss checks only exist when the goal sends the player there."""
-    return not info.get("true_final") or world.options.goal != world.options.goal.option_win_each_clan
+    return not info.get("true_final") or world.options.goal != world.options.goal.option_final_boss
 
 
 # Filler only (decided by the user 2026-11-02): Gnomebringer (win a run with the Naked Gnome) is too
@@ -68,7 +68,7 @@ def sunbringer_excluded(world: WildfrostWorld) -> bool:
     which it is.
     """
     goal = world.options.goal
-    return goal == goal.option_win_each_clan or world.options.clans_required == 1
+    return goal == goal.option_final_boss or world.options.clans_required == 1
 
 
 def create_all_locations(world: WildfrostWorld) -> None:

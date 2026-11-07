@@ -1,13 +1,15 @@
 name: Player1
 game: Wildfrost
 Wildfrost:
-  goal: true_final_boss_each_clan
-  clans_required: 1
   starting_tribe: random
+  progression_direction: forward
+  goal: true_final_boss
+  clans_required: 1
   extra_storm_bells: 1
-  force_storm_bells: false
-  force_overcrank: false
+  force_storm_bells_up_to: 10
   trap_percentage: 10
   game_speed_up: false
   leader_reroll: true
+  disable_possessed_final_boss: false
   death_link: false
+  death_link_damage_percent: 100

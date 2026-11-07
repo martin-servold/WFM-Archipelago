@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace WildfrostArchipelago
 {
     /// <summary>
@@ -64,7 +66,7 @@ namespace WildfrostArchipelago
 
         // The ClassData name of the run: Basic, Magic or Clunk. The forced first run uses a
         // "Tutorial" class with the Snowdweller deck, so it counts as Basic.
-        private static string RunTribe()
+        internal static string RunTribe()
         {
             string tribe = References.PlayerData?.classData?.name;
             return tribe == null || tribe == "Tutorial" ? "Basic" : tribe;
@@ -78,6 +80,7 @@ namespace WildfrostArchipelago
         private static void OnCampaignEnd(Campaign.Result result, CampaignStats stats, PlayerData playerData)
         {
             if (ApMode.Active) DeathLinkHandler.RunEnded(result);
+            if (ApMode.Active && !DailyRun()) LogRunSummary(result);
             if (result != Campaign.Result.Win || !ApMode.Active || DailyRun())
             {
                 currentBattle = null;
@@ -91,6 +94,32 @@ namespace WildfrostArchipelago
             var mode = Campaign.Data?.GameMode;
             bool trueWin = mode != null && SaveSystem.LoadCampaignData(mode, "trueWin", false);
             ApMode.RunWon(RunTribe(), trueWin, SaveSystem.LoadProgressData("stormPointOvercrank", false));
+        }
+
+        // One line per run for tuning the logic (the user's playtests, 2026-11-05): the bells it was
+        // played at, what the tribe could draw from, and how far it got.
+        private static void LogRunSummary(Campaign.Result result)
+        {
+            try
+            {
+                string tribe = RunTribe();
+                int points = StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells());
+                bool overcrank = SaveSystem.LoadProgressData("stormPointOvercrank", false);
+                var nodes = References.Campaign?.nodes;
+                int won = nodes?.Count(n => n?.type != null && n.type.isBattle && n.cleared) ?? 0;
+                var last = BattleNode();
+                string at = last?.data != null && last.data.TryGetValue("battle", out object battle)
+                    ? $"area {last.areaIndex + 1} {battle}" : "no battle";
+                ArchipelagoMod.Client?.LogDebug(
+                    $"Run summary: {result} | {tribe} | {(overcrank ? "Overcranked" : points + " storm points")} " +
+                    $"(bell items {ApMode.StormBells}) | packs: {ApMode.PackCount(tribe, "Companion")} companion, " +
+                    $"{ApMode.PackCount(tribe, "Item")} item, {ApMode.PackCount(tribe, "Charm")} charms | " +
+                    $"battles won {won} | last: {at}");
+            }
+            catch (System.Exception e)
+            {
+                ArchipelagoMod.Client?.LogDebug("Run summary failed: " + e.Message);
+            }
         }
     }
 }

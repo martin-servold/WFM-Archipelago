@@ -282,8 +282,9 @@ namespace WildfrostArchipelago
             return names;
         }
 
-        // A boss rolls its rewards with the map too; like the reward nodes, those go back into the deck,
-        // and the boss draws them again when its fight is entered (EnterNodeReroll).
+        // A boss rolls its rewards with the map too (and so does the Final Boss, a battle node with
+        // hasRewards); like the reward nodes, those go back into the deck, and the boss draws them
+        // again when its fight is entered (EnterNodeReroll).
         [HarmonyPatch(typeof(CampaignNodeTypeBoss), nameof(CampaignNodeTypeBoss.GetRewards), typeof(CampaignNode))]
         private static class BossRewardsOnEntry
         {
@@ -437,7 +438,10 @@ namespace WildfrostArchipelago
             private static void Postfix(CampaignNode node, ref IEnumerator __result)
             {
                 if (!ApMode.Active || node == null || node.cleared || node.data == null) return;
-                if (node.type is CampaignNodeTypeBoss && node.data.ContainsKey("rewards") && !node.data.ContainsKey(DrawnKey))
+                // Any battle with boss rewards: the Final Boss is a plain battle node with hasRewards,
+                // not a CampaignNodeTypeBoss. It kept the bells it rolled with the map, which had gone
+                // back into the deck, and offered bells taken at an earlier boss (2026-11-06).
+                if (node.type is CampaignNodeTypeBattle && node.data.ContainsKey("rewards") && !node.data.ContainsKey(DrawnKey))
                 {
                     DrawBossRewards(node);
                     return;
@@ -1038,6 +1042,78 @@ namespace WildfrostArchipelago
             private static bool Prefix() => !ApMode.Active;
         }
 
+        // Even-step seeds ring up to 20 storm points (ApMode.EvenSteps). Both the bell board
+        // (StormBellManager) and its limit display (StormBellPointLimit) read maxStormPoints with
+        // Mathf.Min(saved, 10) on Awake; the 10 becomes ApMode.StormPointLimit, which is 10 off AP
+        // and in older seeds. The board's other checks (ringable bells, trimming saved bells,
+        // Randomize) all go by that capped value.
+        [HarmonyPatch]
+        private static class StormPointCap
+        {
+            private static IEnumerable<MethodBase> TargetMethods() => new[]
+            {
+                AccessTools.Method(typeof(StormBellManager), "Awake"),
+                AccessTools.Method(typeof(StormBellPointLimit), "Awake"),
+            };
+
+            private static IEnumerable<HarmonyLib.CodeInstruction> Transpiler(IEnumerable<HarmonyLib.CodeInstruction> instructions, MethodBase original)
+            {
+                var min = AccessTools.Method(typeof(UnityEngine.Mathf), nameof(UnityEngine.Mathf.Min), new[] { typeof(int), typeof(int) });
+                var limit = AccessTools.PropertyGetter(typeof(ApMode), nameof(ApMode.StormPointLimit));
+                var code = instructions.ToList();
+                bool done = false;
+                for (int i = 0; i + 1 < code.Count && !done; i++)
+                {
+                    if (code[i].LoadsConstant(10) && code[i + 1].Calls(min))
+                    {
+                        code[i] = new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Call, limit).MoveLabelsFrom(code[i]);
+                        done = true;
+                    }
+                }
+                if (!done) UnityEngine.Debug.LogWarning($"Archipelago: storm point cap: no Mathf.Min(_, 10) in {original.DeclaringType?.Name}.{original.Name}");
+                return code;
+            }
+        }
+
+        // Reverse Storm Bells: the board's "Storm Strength Limit: N" reads "Storm Strength Minimum:"
+        // and the floor instead (the user's call, 2026-11-06). The number is all StormBellPointLimit
+        // shows (nothing else reads it); the words are a localized label beside it, renamed a frame
+        // later, once localization has filled it in, with its localizer removed so it stays.
+        [HarmonyPatch(typeof(StormBellPointLimit), "Awake")]
+        private static class ReverseMinimumLabel
+        {
+            private static void Postfix(StormBellPointLimit __instance)
+            {
+                if (!ApMode.Active || !ApMode.ReverseBells) return;
+                __instance.pointLimit = ApMode.ReverseFloorPoints;
+                __instance.StartCoroutine(Rename(__instance));
+            }
+
+            private static IEnumerator Rename(StormBellPointLimit limit)
+            {
+                yield return null;
+                var number = Traverse.Create(limit).Field("text").GetValue<TMPro.TMP_Text>();
+                for (var root = limit.transform; root != null && root != limit.transform.root; root = root.parent)
+                {
+                    var label = root.GetComponentsInChildren<TMPro.TMP_Text>(true)
+                        .FirstOrDefault(t => t != number && t.text != null && t.text.Contains("Limit"));
+                    if (label == null) continue;
+                    foreach (var c in label.GetComponents<UnityEngine.Component>().Where(c => c != null && c.GetType().Name.Contains("Locali")).ToList())
+                        UnityEngine.Object.Destroy(c);
+                    // The label's box is sized for "Limit" and centered, so the longer word ran into the
+                    // number (2026-11-06): shrink to fit the box instead, never larger than before.
+                    float size = label.fontSize;
+                    label.enableWordWrapping = false;
+                    label.fontSizeMax = size;
+                    label.fontSizeMin = size * 0.6f;
+                    label.enableAutoSizing = true;
+                    label.text = label.text.Replace("Limit", "Minimum");
+                    yield break;
+                }
+                ArchipelagoMod.Client?.LogDebug("Reverse bells: no \"Limit\" label near " + limit.name);
+            }
+        }
+
         [HarmonyPatch(typeof(StormBellManager), "Awake")]
         private static class OvercrankLever
         {
@@ -1045,12 +1121,12 @@ namespace WildfrostArchipelago
             {
                 if (!ApMode.Active) return;
                 var lever = Traverse.Create(__instance).Field("overcranker").GetValue<UnityEngine.GameObject>();
-                if (lever != null) lever.SetActive(ApMode.StormBells >= ApMode.OvercrankBells);
+                if (lever != null) lever.SetActive(ApMode.ReverseBells || ApMode.StormBells >= ApMode.OvercrankBells);
             }
         }
 
-        // force_storm_bells: a new run only starts once the rung bells reach the storm point limit;
-        // force_overcrank: and, with every bell level, once the Overcrank lever is pulled.
+        // force_storm_bells_up_to: a new run only starts once the rung bells reach the storm point limit
+        // (or that number, if lower); at 22, and with every bell level, once the Overcrank lever is pulled.
         // The bells are set on the selection screen itself, so that is where it's checked: when a
         // leader is picked, and again when the screen begins the run.
         // The forced level follows the picked leader's tribe's packs (ApMode.ForcedBells).
@@ -1062,6 +1138,13 @@ namespace WildfrostArchipelago
             if (clan == null) return null;
             int need = ApMode.RequiredStormPoints(clan);
             int have = need == 0 ? 0 : StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells());
+            if (ApMode.ReverseBells)
+            {
+                if (ApMode.RequiresOvercrank(clan) && !SaveSystem.LoadProgressData("stormPointOvercrank", false))
+                    return "Reverse Storm Bells: runs start Overcranked until your first Progressive Storm Bell. Pull the Overcrank lever before starting.";
+                if (have < need) return $"Reverse Storm Bells: runs start at {ApMode.ReverseFloorText} or more. Ring storm bells worth {need} points before starting (now {have}).";
+                return null;
+            }
             if (have < need) return $"This seed plays runs at full storm strength, as far as this tribe's packs carry it. Ring storm bells worth {need} points before starting (now {have}).";
             if (ApMode.RequiresOvercrank(clan) && !SaveSystem.LoadProgressData("stormPointOvercrank", false))
                 return "This seed plays runs Overcranked once a tribe's packs carry it. Pull the Overcrank lever before starting.";
@@ -1089,10 +1172,26 @@ namespace WildfrostArchipelago
                 var pets = Traverse.Create(__instance).Field("petSelection").GetValue<SelectStartingPet>();
                 if (pets == null || pets.running || pets.selectedPetIndex >= 0) return true;
                 string shortfall = StormPointsShortfall(__instance);
-                if (shortfall == null) return true;
+                if (shortfall == null)
+                {
+                    string easier = ReverseEasier();
+                    if (easier != null) __instance.StartCoroutine(ShowPrompt(easier));
+                    return true;
+                }
                 __instance.StartCoroutine(ShowPrompt(shortfall));
                 return false;
             }
+        }
+
+        // Reverse Storm Bells: a run rung harder than the floor may start (the user's call), with a note.
+        private static string ReverseEasier()
+        {
+            if (!ApMode.Active || !ApMode.ReverseBells) return null;
+            int floor = ApMode.RequiredStormPoints("");
+            bool overcrank = SaveSystem.LoadProgressData("stormPointOvercrank", false);
+            int have = StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells());
+            bool harder = overcrank ? !ApMode.RequiresOvercrank("") : have > floor;
+            return harder ? $"Reverse Storm Bells: you can lower your bells to {ApMode.ReverseFloorText} for this run. Starting as rung." : null;
         }
 
         // Backstop for bells switched off after the leader was picked (or a run with no pet picker).
@@ -1316,6 +1415,107 @@ namespace WildfrostArchipelago
                 string sizes = string.Join(", ", pools.Select(p => $"{p.Key} {p.Value.list?.Count}"));
                 ArchipelagoMod.Client?.LogDebug("Run reward pools: " + sizes);
             }
+        }
+
+        // Map battles lean toward ones whose check hasn't been sent (the user's call, 2026-11-05:
+        // "a finger on the scale", not a guarantee; one fight slot was rerolled 15+ times for its
+        // last battle). Vanilla's Tier.PullBattle deals each tier's battles from a deck refilled
+        // from its pool (minus locked ones) and takes one at random; under AP, an unchecked battle
+        // counts UncheckedWeight times. Unknown (not connected yet) counts as checked.
+        [HarmonyPatch]
+        private static class WeightedBattles
+        {
+            private const float UncheckedWeight = 2f;
+
+            private static MethodBase TargetMethod() =>
+                AccessTools.Method(AccessTools.Inner(typeof(CampaignPopulator), "Tier"), "PullBattle");
+
+            private static bool Prefix(object __instance, CampaignPopulator campaignPopulator, ref BattleData __result)
+            {
+                var client = ArchipelagoMod.Client;
+                if (!ApMode.Active || client == null || References.PlayerData?.classData == null) return true;
+                var tier = Traverse.Create(__instance);
+                var battles = tier.Field("battles").GetValue<List<BattleData>>();
+                var nodes = tier.Field("nodes").GetValue<List<CampaignNode>>();
+                if (battles == null || nodes == null || nodes.Count == 0) return true;
+                if (battles.Count == 0)
+                {
+                    var pool = tier.Field("campaignTier").Field("battlePool").GetValue<BattleData[]>();
+                    if (pool == null) return true;
+                    var locked = Traverse.Create(campaignPopulator);
+                    foreach (var battle in pool)
+                        if (battle != null && !locked.Method("BattleIsLocked", battle.name).GetValue<bool>()) battles.Add(battle);
+                }
+                if (battles.Count == 0) return true;
+
+                int area = nodes[0].areaIndex;
+                string tribe = LocationHooks.RunTribe();
+                var weights = battles.Select(b => client.CheckSent($"battle:{area}:{b.name}:{tribe}") == false ? UncheckedWeight : 1f).ToList();
+                float roll = UnityEngine.Random.Range(0f, weights.Sum());
+                int pick = 0;
+                while (pick < battles.Count - 1 && (roll -= weights[pick]) >= 0) pick++;
+                __result = battles[pick];
+                // Only slots with a choice and something unchecked; unchecked ones are starred.
+                if (battles.Count > 1 && weights.Any(w => w != 1f))
+                    client.LogDebug($"Area {area + 1} battle: {__result.name} from " +
+                                    string.Join(", ", battles.Select((b, i) => weights[i] != 1f ? b.name + "*" : b.name)));
+                battles.RemoveAt(pick);
+                return false;
+            }
+        }
+
+        // Reverse Storm Bells: the True Final Boss comes on a no-bell run, not at 10+ storm points.
+        // AddSecretCardsSystem (the True Final Boss path) is the threshold's one caller; it also turns
+        // itself off when the run has no modifier list, which a run with no bells has none of.
+        [HarmonyPatch(typeof(StormBellManager), nameof(StormBellManager.TrueFinalBossPointThresholdReached))]
+        private static class ReverseTrueFinalBoss
+        {
+            private static bool Prefix(ref bool __result)
+            {
+                if (!ApMode.Active || !ApMode.ReverseBells) return true;
+                __result = NoBellRun();
+                return false;
+            }
+
+            public static bool NoBellRun() =>
+                StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells()) == 0
+                && !SaveSystem.LoadProgressData("stormPointOvercrank", false);
+        }
+
+        [HarmonyPatch(typeof(AddSecretCardsSystem), "OnEnable")]
+        private static class ReverseTrueFinalBossModifiers
+        {
+            private static void Prefix()
+            {
+                if (!ApMode.Active || !ApMode.ReverseBells || Campaign.Data == null || Campaign.Data.Modifiers != null) return;
+                if (ReverseTrueFinalBoss.NoBellRun()) Campaign.Data.Modifiers = new List<GameModifierData>();
+            }
+        }
+
+        // Disable Possessed Final Boss (decided by the user 2026-11-06): after a win the game saves the
+        // deck as "finalBossDeck", and the next Final Boss fights with it (the possessed leader and
+        // companions). LoadCards is its one reader for the battle (and the Frostoscope preview); null
+        // makes GetBaseEnemies use the boss's defaultDeck. The save is left as it is.
+        [HarmonyPatch(typeof(BattleGenerationScriptFinalBoss), nameof(BattleGenerationScriptFinalBoss.LoadCards))]
+        private static class DefaultFinalBossDeck
+        {
+            private static bool Prefix(ref CardData[] __result)
+            {
+                if (!ApMode.Active || !ApMode.NoPossessedFinalBoss) return true;
+                __result = null;
+                return false;
+            }
+        }
+
+        // Vanilla takes the saved deck's companions out of the reward pools at every run start, since
+        // they're on the boss. Under AP that hid companions the player has received the packs for, which
+        // logic counts on, so it's skipped whatever the option says (decided by the user 2026-11-07:
+        // people should have access to the packs they've unlocked). The possessed boss still fights
+        // with them; they can just be offered too.
+        [HarmonyPatch(typeof(CharacterRewards), nameof(CharacterRewards.RemoveCompanionsInFinalBossBattle))]
+        private static class KeepFinalBossCompanions
+        {
+            private static bool Prefix() => !ApMode.Active;
         }
     }
 }

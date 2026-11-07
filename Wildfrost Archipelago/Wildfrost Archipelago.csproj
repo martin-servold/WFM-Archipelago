@@ -389,6 +389,7 @@
     <Compile Include="ApMode.cs" />
     <Compile Include="ApEffects.cs" />
     <Compile Include="ApPatches.cs" />
+    <Compile Include="BackToTown.cs" />
     <Compile Include="ApTracker.cs" />
     <Compile Include="ApUi.cs" />
     <Compile Include="ArchipelagoClient.cs" />

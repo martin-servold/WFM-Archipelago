@@ -52,12 +52,15 @@ namespace WildfrostArchipelago
         private static int goal;
         private static int clansRequired = 3;
         private static List<ArchipelagoClient.BellKit> bellKits;
-        private static bool forceStormBells;
+        private static int forceStormPoints;
         private static bool forceOvercrank;
+        private static bool reverseBells;
+        private static int bellLevels = 7;
         private static bool gameSpeedUp;
         // Every item key in the seed (slot_data item_keys).
         private static HashSet<string> seedItems = new HashSet<string>();
         private static bool leaderReroll;
+        private static bool noPossessedFinalBoss;
         // Snowdwellers are an item too in seeds with the starting_tribe option.
         private static bool snowdwellersIsItem;
 
@@ -100,11 +103,14 @@ namespace WildfrostArchipelago
             goal = client.Goal;
             clansRequired = client.ClansRequired;
             bellKits = client.BellKits;
-            forceStormBells = client.ForceStormBells;
+            forceStormPoints = client.ForceStormPoints;
             forceOvercrank = client.ForceOvercrank;
+            reverseBells = client.ReverseBells;
+            bellLevels = client.StormBellLevels;
             gameSpeedUp = client.GameSpeedUp;
             seedItems = new HashSet<string>(client.ItemKeyValues);
             leaderReroll = client.LeaderReroll;
+            noPossessedFinalBoss = client.NoPossessedFinalBoss;
             snowdwellersIsItem = client.SnowdwellersIsItem;
             cardKinds = client.CardKinds ?? new Dictionary<string, string>();
             packs = client.Packs ?? new Dictionary<string, List<string>>();
@@ -314,17 +320,43 @@ namespace WildfrostArchipelago
         // bells at the cap adds a point up to 10 (the True Final Boss threshold), and Overcrank
         // unlocks once every bell has been gilded by a True Final Boss win. Under AP each
         // Progressive Storm Bell is one of those steps, and wins change nothing (ApPatches).
+        //
+        // Seeds with 11 levels (slot_data storm_bell_levels; decided by the user 2026-11-06) step by
+        // two storm points: 2, 4, ... 20, and the 11th bell is Overcrank (22). Vanilla caps the bells
+        // at 10, so the cap is lifted to 20 for those seeds (ApPatches.StormPointCap). Older seeds,
+        // with fewer levels, keep the 7 steps above.
         private const string StormBellKey = "storm_bell";
-        public const int OvercrankBells = 7;
+        private const int EvenStepLevels = 11;
+
+        /// <summary>Bell levels in this seed; the last one is Overcrank (normal) or no bells (reverse).</summary>
+        public static int OvercrankBells => bellLevels;
+
+        /// <summary>Whether this seed's bells go up in steps of two storm points, past vanilla's 10.</summary>
+        public static bool EvenSteps => bellLevels >= EvenStepLevels;
+
+        /// <summary>The most storm points bells can be rung to without Overcrank: 20 in even-step AP seeds, else vanilla's 10.</summary>
+        public static int StormPointLimit => Active && EvenSteps ? 20 : 10;
 
         public static int StormBells => progressiveByIndex.Values.Count(k => k == StormBellKey);
+
+        /// <summary>The storm point cap these many bells give (normal mode); the Overcrank level adds the lever, not points.</summary>
+        private static int CapFor(int bells) => EvenSteps
+            ? 2 * System.Math.Min(bells, bellLevels - 1)
+            : System.Math.Min(10, 4 + bells);
 
         // The town's bell screen reads these keys when it opens.
         private static void ApplyStormBells()
         {
             int bells = StormBells;
+            if (reverseBells)
+            {
+                // Every bell and the lever are there from the start; the floor is RequiredStormPoints.
+                SaveSystem.SaveProgressData("stormBellsUnlocked", true);
+                SaveSystem.SaveProgressData("maxStormPoints", EvenSteps ? 20 : 10);
+                return;
+            }
             SaveSystem.SaveProgressData("stormBellsUnlocked", bells >= 1);
-            SaveSystem.SaveProgressData("maxStormPoints", System.Math.Min(10, 4 + System.Math.Max(bells, 1)));
+            SaveSystem.SaveProgressData("maxStormPoints", CapFor(System.Math.Max(bells, 1)));
             if (bells < OvercrankBells && SaveSystem.LoadProgressData("stormPointOvercrank", false))
             {
                 SaveSystem.SaveProgressData("stormPointOvercrank", false);
@@ -337,14 +369,43 @@ namespace WildfrostArchipelago
         /// <summary>Whether the leader select screen offers rerolls (leader_reroll).</summary>
         public static bool LeaderRerollOn => leaderReroll;
 
-        /// <summary>Whether a run of this clan must start Overcranked (force_overcrank, once the lever is unlocked).</summary>
-        public static bool RequiresOvercrank(string clan) => forceOvercrank && ForcedBells(clan) >= OvercrankBells;
+        /// <summary>Whether the Final Boss keeps its default deck (disable_possessed_final_boss).</summary>
+        public static bool NoPossessedFinalBoss => noPossessedFinalBoss;
 
-        /// <summary>Storm points a run of this clan must start with (force_storm_bells), or 0.</summary>
+        // --- Reverse Storm Bells (slot_data progression_direction 1; designed with the user 2026-11-05) ---
+        // Runs start Overcranked, and each Progressive Storm Bell lowers the floor a step: Overcranked,
+        // 10, 9, 8, 7, 6, 5, then no bells (even-step seeds: Overcranked, 20, 18, ... 2, then no bells).
+        // The floor is a minimum, not a level: a run may ring more (with a warning that it could ring
+        // less). The True Final Boss only comes on a no-bell run.
+        public static bool ReverseBells => reverseBells;
+
+        /// <summary>Reverse: the storm point floor (the ringable top while Overcranked is required, 0 at the bottom).</summary>
+        private static int ReverseFloor
+        {
+            get
+            {
+                int bells = StormBells;
+                if (bells >= OvercrankBells) return 0;
+                if (EvenSteps) return bells == 0 ? 20 : 22 - 2 * bells;
+                return bells == 0 ? 10 : 11 - bells;
+            }
+        }
+
+        /// <summary>Reverse: the floor for the bell board's label; while Overcranked is required, every bell (22, or 10 in older seeds' terms).</summary>
+        public static int ReverseFloorPoints => StormBells == 0 ? (EvenSteps ? 22 : 10) : ReverseFloor;
+
+        /// <summary>What the bells require, for messages: "Overcranked", "7 storm points" or "no bells".</summary>
+        public static string ReverseFloorText => StormBells == 0 ? "Overcranked" : ReverseFloor == 0 ? "no bells" : $"{ReverseFloor} storm points";
+
+        /// <summary>Whether a run of this clan must start Overcranked (force_storm_bells_up_to 22, once the lever is unlocked).</summary>
+        public static bool RequiresOvercrank(string clan) => reverseBells ? StormBells == 0 : forceOvercrank && ForcedBells(clan) >= OvercrankBells;
+
+        /// <summary>Storm points a run of this clan must start with (force_storm_bells_up_to: the limit, up to that), or 0.</summary>
         public static int RequiredStormPoints(string clan)
         {
+            if (reverseBells) return ReverseFloor;
             int bells = ForcedBells(clan);
-            return forceStormBells && bells >= 1 ? System.Math.Min(10, 4 + bells) : 0;
+            return forceStormPoints > 0 && bells >= 1 ? System.Math.Min(CapFor(bells), forceStormPoints) : 0;
         }
 
         /// <summary>
@@ -403,9 +464,10 @@ namespace WildfrostArchipelago
         private static string DescribeBells()
         {
             int bells = StormBells;
+            if (reverseBells) return $"reverse, runs start from {ReverseFloorText}" + (ReverseFloor == 0 ? " (True Final Boss)" : "");
             if (bells == 0) return "locked";
-            if (bells >= OvercrankBells) return "10 storm points and Overcrank";
-            return $"{System.Math.Min(10, 4 + bells)} storm points" + (bells >= 6 ? " (True Final Boss)" : "");
+            if (bells >= OvercrankBells) return $"{CapFor(bells)} storm points and Overcrank";
+            return $"{CapFor(bells)} storm points" + (CapFor(bells) >= 10 ? " (True Final Boss)" : "");
         }
 
         // --- Goal ---

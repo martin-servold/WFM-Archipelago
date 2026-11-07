@@ -45,14 +45,22 @@ namespace WildfrostArchipelago
             var open = keys.Where(k => client.CheckSent(k) != true).ToList();
             var inLogic = open.Where(k => !rules.TryGetValue(k, out JToken rule) || Evaluate(rule)).ToList();
             text.Append($"\n<b>{keys.Count - open.Count}/{keys.Count} checks sent</b>\n");
-            int pages = System.Math.Max(1, (inLogic.Count + ChecksPerPage - 1) / ChecksPerPage);
+            // A check and its "#2" twin (bosses, charm challenges) share one line (asked by the user 2026-11-07).
+            var lines = inLogic.GroupBy(k => k.EndsWith("#2") ? k.Substring(0, k.Length - 2) : k).Select(g =>
+            {
+                string key = g.First();
+                string name = names.TryGetValue(key, out string n) ? n : key;
+                if (name.EndsWith(" #2")) name = name.Substring(0, name.Length - 3);
+                return g.Count() > 1 ? $"{name}  <size=70%>(2 checks)</size>" : name;
+            }).ToList();
+            int pages = System.Math.Max(1, (lines.Count + ChecksPerPage - 1) / ChecksPerPage);
             page = (page % pages + pages) % pages;
             text.Append($"\n<b>In logic now ({inLogic.Count})</b>");
             if (pages > 1) text.Append($"  <size=70%>(page {page + 1}/{pages}, PgUp/PgDn for others)</size>");
             text.Append('\n');
             if (inLogic.Count == 0) text.Append("<size=80%>Nothing until more items arrive.</size>\n");
-            foreach (string key in inLogic.Skip(page * ChecksPerPage).Take(ChecksPerPage))
-                text.Append(names.TryGetValue(key, out string name) ? name : key).Append('\n');
+            foreach (string line in lines.Skip(page * ChecksPerPage).Take(ChecksPerPage))
+                text.Append(line).Append('\n');
             text.Append($"\n<size=80%>Not in logic yet: {open.Count - inLogic.Count}.</size>\n");
         }
 

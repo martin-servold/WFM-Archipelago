@@ -34,8 +34,11 @@ SPIKE_PET = "Spike Pet"
 LOKI_PET = "Loki Pet"
 SNEEZLE_PET = "Sneezle Pet"
 PROGRESSION_PETS = {SPIKE_PET, LOKI_PET, SNEEZLE_PET}
-# Unlock the bells (5 storm points), raise the cap to 6, 7, 8, 9 and 10, Overcrank.
-STORM_BELL_LEVELS = 7
+# Steps of two storm points (decided by the user 2026-11-06): caps 2, 4, ... 20, then Overcrank (22).
+# Reverse runs the other way: Overcranked, 20, 18, ... 2, then no bells. The client lifts vanilla's
+# 10-point cap for these seeds; seeds from before (slot_data without storm_bell_levels) had 7 levels:
+# 5 storm points, up to 10, Overcrank.
+STORM_BELL_LEVELS = 11
 
 CLASSIFICATION_BY_KIND = {
     # Tribes gate tribe-locked battles and the "win with tribe" challenges.

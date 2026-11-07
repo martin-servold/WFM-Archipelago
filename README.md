@@ -55,17 +55,24 @@ Archipelago** plays your normal save instead.
 
 ## Options
 
-- **Goal:** win a run, beat the True Final Boss, or beat it Overcranked, with each clan
-- **Clans Required:** how many clans (1 to 3) need that win to finish the seed
 - **Starting Tribe:** Snowdwellers, Shademancers, Clunkmasters or random. The other two are items.
+- **Progression Direction:** Forward (the default): each Progressive Storm Bell raises the storm point limit by 2.
+  Reverse: runs start Overcranked, each bell lowers the bells a run must start with, and the goal is the True Final
+  Boss, which only comes on a run with no bells.
+- **Goal:** Final Boss, True Final Boss (the default) or Overcranked True Final Boss
+- **Goal Clans Required:** how many clans (1 to 3) need that win, each with a run of its own, to finish the seed
 - **Extra Storm Bells:** spare Progressive Storm Bells, so the ones you need turn up sooner
-- **Force Storm Bells:** runs must start with as many storm points as you've unlocked (up to 10), as far as the
-  tribe's packs carry it
-- **Force Overcrank:** once Overcrank is unlocked, every run must be Overcranked, once the tribe's packs carry it
+- **Force Storm Bells Up To** (10 by default): runs must start with as many storm points as you've unlocked, up to
+  this number, as far as the tribe's packs carry it. 22 also makes every run Overcranked once Overcrank is unlocked;
+  0 turns it off.
 - **Trap Percentage:** how much filler is traps instead of Bling and boons
 - **Game Speed Up:** lets F6 speed the game up (1.5x or 2x)
 - **Leader Reroll:** a button (or R) on the leader select screen rerolls the leaders, as often as you like
+- **Disable Possessed Final Boss** (off by default): the Final Boss always fights with its own deck, not your last
+  winning deck
 - **DeathLink:** losing a run kills the other DeathLink players, and theirs makes your leader flee
+- **Death Link Damage Percent** (100 by default): a received death takes this share of your leader's max health in
+  the next battle instead, plus a Gunk Fruit in your deck for the run if it survives; 100 makes it flee
 
 The full game page, with what counts as a check and what logic expects, is
 [`apworld/wildfrost/docs/en_Wildfrost.md`](apworld/wildfrost/docs/en_Wildfrost.md).

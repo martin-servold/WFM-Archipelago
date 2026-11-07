@@ -17,11 +17,11 @@ of some kind, the map nodes that would offer that kind give 1 Bling instead.
 
 Win with your clans (Snowdwellers, Shademancers and Clunkmasters). The **Goal** option sets what a win is:
 
-- **Win Each Clan:** win a run.
-- **True Final Boss Each Clan:** beat the True Final Boss, which needs 10 storm points of storm bells (the default).
-- **Overcranked Each Clan:** beat the True Final Boss on an Overcranked run (every bell on).
+- **Final Boss:** win a run.
+- **True Final Boss:** beat the True Final Boss, which needs 10 storm points of storm bells (the default).
+- **Overcranked True Final Boss:** beat the True Final Boss on an Overcranked run (every bell on).
 
-**Clans Required** (1 to 3, default 1) sets how many clans need such a win. The default finishes the seed with one
+**Goal Clans Required** (1 to 3, default 1) sets how many clans need such a win. The default finishes the seed with one
 win against the True Final Boss.
 
 The run that completes the last clan finishes the seed.
@@ -39,9 +39,9 @@ The run that completes the last clan finishes the seed.
 Logic expects no cards for the first five fights of a run (two battles, the first boss, two more battles). From the
 second boss on, a clan is expected to have at least one companion pack and either one item pack or six charms. Only
 General packs and charms and that clan's own count. The True Final Boss expects two companion and two item packs and
-three charms plus six storm bells. An Overcranked win expects two companion and three item packs and six charms plus all
-seven bells. Force Storm Bells and Force Overcrank each add one more companion or item pack, or three more charms, to all
-of these.
+three charms plus five storm bells (10 storm points). An Overcranked win expects two companion and three item packs and six
+charms plus all eleven bells. Force Storm Bells Up To adds one more companion or item pack, or three more charms, to all
+of these, and one more again at 22.
 
 Some challenges expect particular cards, from the pack that holds each one in your seed, and a tribe that can play
 them: Tough Nut a Shell card (Kernel, Shelly, Shell Shield or Shellbo), Rampage a Frenzy card (Blaze Bom, Tiny Tyko or
@@ -58,7 +58,7 @@ and Long Live the King expect a companion pack and an item pack, and Achieve a 6
 packs and an item pack or three charms. Hoarder (12 cards in hand) expects the Clunkmasters, whose leaders can trash, and one of: Lupa, the Pinch or Gear
 Charm, the Sneezle pet, Lumin Ring with Folby, something that gives the leader Frenzy (Blaze Bom, Moko Charm or Blaze
 Tea), the Punchfist Charm, or Bom Barrel with the Cake or Frenzy Charm. Equip 10 Charms expects one charm that one of your tribes can use, and Buy 5 discounted items two item packs (three
-with Force Storm Bells or Force Overcrank, four with both).
+with Force Storm Bells Up To on, four at 22).
 
 You start with one tribe, chosen by the **Starting Tribe** option (random by default); the other two are items, and
 each tribe's battles and wins need its tribe. Some battles also only appear once you have the Shademancers or
@@ -75,13 +75,15 @@ hovering any battle says whether its check was sent.
 Card packs (3 companions or items of one clan: General, Snowdweller, Shademancer or Clunkmaster), every charm on its own, the pets, the two tribes you don't start with, and the
 map events the miner unlocks in vanilla (the Charm Merchant, Shade Sculptor and Gnome Traveller), and the Progressive Storm Bells.
 
-Storm bells no longer unlock by winning. The first Progressive Storm Bell unlocks them with a 5 storm point limit, the
-next five raise it to 10 (enough for the True Final Boss), and the seventh unlocks Overcrank. The **Extra Storm Bells**
-option (1 by default) adds spare copies so the ones you need turn up sooner. With **Force Storm Bells** on, a run won't start until
-the bells you've rung add up to your current storm point limit (at most 10; it never makes you Overcrank). With
-**Force Overcrank** on, once you have the seventh bell a run won't start until the Overcrank lever is pulled. Both only
-force the bells your packs can carry: a run's tribe needs the packs logic expects for a win at that strength (counting
-General packs and the tribe's own), so a seed that hands out bells early doesn't make the first fights unwinnable.
+Storm bells no longer unlock by winning. Each Progressive Storm Bell raises the storm point limit by 2: 2, 4, 6 and so on
+up to 20 (10, the fifth bell, is enough for the True Final Boss), and the eleventh unlocks Overcrank. Vanilla stops at 10;
+this mod lets you ring past it. The **Extra Storm Bells**
+option (1 by default) adds spare copies so the ones you need turn up sooner. **Force Storm Bells Up To**
+(10 by default) holds runs to your bells: a run won't start until the bells you've rung add up to your current storm
+point limit or that number, whichever is lower. At 22, once you have the eleventh bell, a run also won't start until the
+Overcrank lever is pulled. 0 turns it off. It only forces the bells your packs can carry: a run's tribe needs the packs for a win at that strength (counting
+General packs and the tribe's own), plus one more from 4 storm points and two more from 14, so a seed that hands out bells
+early doesn't make the first fights unwinnable.
 
 ## Do I start with a pet?
 
@@ -93,15 +95,32 @@ multiworld.
 With **Leader Reroll** on (the default), the leader select screen has a button under the leaders, or R, that deals new
 ones, as often as you like. Handy for a check that needs a particular kind of leader.
 
+## Can I skip fighting my old deck at the Final Boss?
+
+After a win, the game turns your winning deck into the next Final Boss fight (your old leader and companions,
+possessed). With **Disable Possessed Final Boss** on (it's off by default), the Final Boss always fights with its own
+default deck. Either way, every companion you have the pack for can still turn up as a reward; the base game would
+hold back the ones on the possessed boss.
+
 ## Can the game run faster?
 
 With **Game Speed Up** on (it's off by default), F6 speeds the game up to 1.5x or 2x while you play this slot.
 
 ## What does DeathLink do?
 
-With **DeathLink** on, losing a run sends a death to everyone else with DeathLink. When a death arrives, your leader
-flees: the current battle is lost and the run ends, with a message naming who died. A death that arrives outside a
-battle waits for the next battle of the run; one that arrives outside a run is ignored.
+With **DeathLink** on, losing a run sends a death to everyone else with DeathLink. What a received death does is set by
+**Death Link Damage Percent** (0 to 100, default 100), with a message naming who died:
+
+- **100:** your leader flees. The current battle is lost and the run ends, on the map too. In a shop or event it waits
+  until you're back on the map.
+- **1 to 99:** your leader loses that share of its max health (rounded up) on your turn in the next battle. If that
+  takes it to 0, it flees and the run ends. Units heal after every battle, so the hit only lasts for that battle.
+- **0:** no damage.
+
+Below 100, a death your leader survives also adds a **Gunk Fruit** to your deck for the rest of the run, and to your
+hand if you're in a battle.
+
+A death that arrives outside a run is ignored.
 
 ## What are the filler items?
 

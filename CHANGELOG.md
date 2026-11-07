@@ -1,8 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-07)
 
-- **Logic:** Kill 15 enemies with Shroom and Apply 60 Shell need Snowdwellers, whose leaders bring Shroom and Shell.
+Install the new `wildfrost.apworld` to make seeds with the new options. Seeds made with 0.2.x still work with this version of the mod, with their old settings, and yamls written for 0.2.x still generate. Their `force_storm_bells` and `force_overcrank` lines are ignored with a warning, so they get Force Storm Bells Up To's default of 10: set `force_storm_bells_up_to` instead (0 for off).
+
+- **Storm bells in steps of 2:** there are 11 Progressive Storm Bells instead of 7. Each one raises the storm point limit by 2 (2, 4, ... 20, past vanilla's 10), and the 11th unlocks Overcrank. The True Final Boss needs 5 (10 points). In Reverse, each bell lowers the floor by 2, from Overcranked through 20, 18, ... 2 to none. Seeds made before this keep the old 7 steps.
+- **Force Storm Bells Up To** (new option, 10 by default) replaces Force Storm Bells and Force Overcrank: runs must start at your storm point limit, up to this number. 22 also forces Overcrank, and 0 turns it off. It's now on by default. Higher levels are only forced once your packs carry them: one more pack from 4 storm points, two more from 14. Seeds made before this keep their old settings.
+- **Reverse Storm Bells** (new option, Progression Direction: Reverse): runs start Overcranked, and each Progressive Storm Bell lowers the bells a run must start with, down to none; the bell board shows that floor as "Storm Strength Minimum". The True Final Boss only comes on a run with no bells, and it's the goal. The logic was tuned from playtests.
+- **Options renamed and reordered:** the Goal choices are now Final Boss, True Final Boss and Overcranked True Final Boss (how many clans is Goal Clans Required, formerly Clans Required). Starting Tribe and Progression Direction come first. yamls with the old names still work.
+- **Death Link Damage Percent** (new option, 100 by default): a received death takes this share of your leader's max health in your next battle, and only makes it flee if that takes it to 0. A death your leader survives also adds a Gunk Fruit to your deck for the rest of the run (and to your hand in a battle). 100 is the old flee, 0 no damage. Several deaths arriving together now each count.
+- **Disable Possessed Final Boss** (new option, off by default): the Final Boss always fights with its default deck instead of your last winning deck.
+- **Possessed Final Boss companions:** after a win, the base game stops offering the companions in your winning deck while they're on the boss. Seeds no longer do that, so every companion you have the pack for can turn up.
+- **Fix:** Reroll leaders is hidden while a leader is picked, where rerolling jumbled the cards, and while the storm bell window is open.
+- **Fix:** the Final Boss's reward bells could repeat bells offered or taken at an earlier boss. It now picks its rewards when you enter it, like the other bosses.
+- **Checks tab:** a check and its "#2" twin (bosses, charm challenges) share one line, marked "(2 checks)".
+- **Run summary:** each run ends with a line in the log: the bells, the packs and charms the tribe had, and how far it got.
+- **Logic:** Kill 15 enemies with Shroom and Apply 60 Shell need Snowdwellers, whose leaders bring Shroom and Shell. Use Smackback to kill 20 enemies needs Snowdwellers or Shademancers (Clunkmaster leaders have no Smackback), Gojiber or the Punchfist Charm.
+- **Back To Town:** the pause menu has a Back To Town line during a run. It keeps the run saved, like Back To Menu.
+- **Map battles:** battles you haven't checked yet are twice as likely to come up on the map.
 - **Mods:** turning mods on or off while playing a seed also saves them to your own profile, so they stay that way on the next launch.
 
 ## 0.2.1 (2026-11-04)

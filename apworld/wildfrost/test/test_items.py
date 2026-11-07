@@ -1,7 +1,10 @@
+import unittest
+
 from ..data import CARDS, ITEMS, LOCATIONS, PACK_SIZE
 from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS
 from ..locations import CLANS
 from ..rules import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED, required_tribes
+from ..world import progression_direction
 from . import WildfrostTestBase
 
 
@@ -98,6 +101,11 @@ class TestGoalWinEachClan(WildfrostTestBase):
         pool = [i.name for i in self.multiworld.itempool]
         self.assertEqual(pool.count(STORM_BELL), STORM_BELL_LEVELS)
 
+    def test_bell_levels_in_slot_data(self) -> None:
+        # The client steps by 2 storm points with 11 levels, and keeps the old 7 steps without the key.
+        self.assertEqual(STORM_BELL_LEVELS, 11)
+        self.assertEqual(self.world.fill_slot_data()["storm_bell_levels"], STORM_BELL_LEVELS)
+
     def test_needs_both_tribes(self) -> None:
         self.collect_all_but(["Shademancers", "Victory"])
         self.assertFalse(self.multiworld.can_beat_game(self.multiworld.state))
@@ -105,12 +113,12 @@ class TestGoalWinEachClan(WildfrostTestBase):
 
 
 class TestGoalTrueFinalBoss(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan", "extra_storm_bells": 2}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "extra_storm_bells": 2}
 
-    def test_true_final_boss_checks_need_six_bells(self) -> None:
+    def test_true_final_boss_checks_need_ten_storm_points(self) -> None:
         self.assertTrue(TRUE_FINAL)
         self.collect_all_but([STORM_BELL, "Victory"])
-        self.collect_bells(5)
+        self.collect_bells(TRUE_FINAL_BELLS_NEEDED - 1)
         for name in TRUE_FINAL + VICTORIES:
             with self.subTest(location=name):
                 self.assertFalse(self.can_reach_location(name))
@@ -125,7 +133,7 @@ class TestGoalTrueFinalBoss(BellTestBase):
 
 
 class TestGoalOvercranked(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "overcranked_each_clan"}
+    options = {**WildfrostTestBase.options, "goal": "overcranked_true_final_boss"}
 
     def test_victory_needs_every_level(self) -> None:
         self.collect_all_but([STORM_BELL, "Victory"])
@@ -137,11 +145,10 @@ class TestGoalOvercranked(BellTestBase):
 
 
 class TestForceStormBells(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "force_storm_bells": True}
+    options = {**WildfrostTestBase.options, "force_storm_bells_up_to": 10}
 
     def test_slot_data(self) -> None:
-        self.assertIs(self.world.fill_slot_data()["force_storm_bells"], True)
-        self.assertIs(self.world.fill_slot_data()["force_overcrank"], False)
+        self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 10)
         self.assertIs(self.world.fill_slot_data()["game_speed_up"], False)  # off by default
 
     def test_discounted_items_need_three_item_packs(self) -> None:
@@ -161,11 +168,40 @@ class TestForceStormBells(WildfrostTestBase):
         self.assertTrue(self.can_reach_location("Victory (Snowdwellers)"))
 
 
-class TestForceOvercrank(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "force_overcrank": True}
+class TestForcedPackSteps(WildfrostTestBase):
+    """The client's forcing ramp (bell_kits), not logic."""
 
-    def test_slot_data(self) -> None:
-        self.assertIs(self.world.fill_slot_data()["force_overcrank"], True)
+    def test_steps(self) -> None:
+        from ..rules import forced_pack_extra
+        self.assertEqual([forced_pack_extra(p) for p in range(0, 23, 2)], [0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])  # 0, 2 | 4-12 | 14-22
+
+
+class TestForceStormBellsFourteen(WildfrostTestBase):
+    """The client's ramp asks two more packs from 14 on; logic stays at one (the user's call)."""
+    options = {**WildfrostTestBase.options, "force_storm_bells_up_to": 14}
+
+    def test_win_needs_one_more_pack(self) -> None:
+        self.collect_by_name([pack("General", "Companion"), pack("General", "Item")])
+        self.assertFalse(self.can_reach_location("Victory (Snowdwellers)"))
+        self.collect_by_name([pack("Basic", "Companion")])
+        self.assertTrue(self.can_reach_location("Victory (Snowdwellers)"))
+
+
+class TestForceStormBellsTwo(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "force_storm_bells_up_to": 2}
+
+    def test_win_needs_one_more_pack(self) -> None:
+        self.collect_by_name([pack("General", "Companion"), pack("General", "Item")])
+        self.assertFalse(self.can_reach_location("Victory (Snowdwellers)"))
+        self.collect_by_name([pack("Basic", "Companion")])
+        self.assertTrue(self.can_reach_location("Victory (Snowdwellers)"))
+
+
+class TestForceStormBellsOdd(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "force_storm_bells_up_to": 15}
+
+    def test_rounds_down_to_even(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 14)
 
 
 class TestRandomStartingPet(WildfrostTestBase):
@@ -196,6 +232,48 @@ class TestLeaderRerollOff(WildfrostTestBase):
         self.assertIs(self.world.fill_slot_data()["leader_reroll"], False)
 
 
+class TestOldOptionNames(WildfrostTestBase):
+    """yamls from before 0.3.0 still generate with the old Goal and Progression Direction choice names."""
+    options = {**WildfrostTestBase.options, "goal": "overcranked_each_clan", "progression_direction": "normal"}
+
+    def test_aliases(self) -> None:
+        self.assertEqual(self.world.options.goal.value, 2)
+        self.assertEqual(self.world.options.progression_direction.value, 0)
+
+
+class TestDirectionFromOldSlotData(unittest.TestCase):
+    """Universal Tracker: seeds made before the rename sent the direction as "storm_bells"."""
+
+    def test_fallback(self) -> None:
+        self.assertEqual(progression_direction({"progression_direction": 1}), 1)
+        self.assertEqual(progression_direction({"storm_bells": 1}), 1)
+        self.assertEqual(progression_direction({}), 0)
+
+
+class TestDeathLinkDamage(WildfrostTestBase):
+    def test_flee_by_default(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["death_link_damage_percent"], 100)
+
+
+class TestDeathLinkDamageSet(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "death_link": True, "death_link_damage_percent": 40}
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["death_link_damage_percent"], 40)
+
+
+class TestPossessedFinalBoss(WildfrostTestBase):
+    def test_vanilla_by_default(self) -> None:
+        self.assertIs(self.world.fill_slot_data()["disable_possessed_final_boss"], False)
+
+
+class TestPossessedFinalBossOff(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "disable_possessed_final_boss": True}
+
+    def test_slot_data(self) -> None:
+        self.assertIs(self.world.fill_slot_data()["disable_possessed_final_boss"], True)
+
+
 class TestGameSpeedUp(WildfrostTestBase):
     options = {**WildfrostTestBase.options, "game_speed_up": True}
 
@@ -203,14 +281,29 @@ class TestGameSpeedUp(WildfrostTestBase):
         self.assertIs(self.world.fill_slot_data()["game_speed_up"], True)
 
 
-class TestForceBoth(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "force_storm_bells": True, "force_overcrank": True}
+class TestForceOvercrank(WildfrostTestBase):
+    """22 also forces Overcrank, as Force Storm Bells and Force Overcrank together did."""
+    options = {**WildfrostTestBase.options, "force_storm_bells_up_to": 22}
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 22)
 
     def test_win_needs_two_more_packs(self) -> None:
         self.collect_by_name([pack("General", "Companion"), pack("General", "Item")] + charms("General", 3))
         self.assertFalse(self.can_reach_location("Victory (Snowdwellers)"))
         self.collect_by_name([pack("Basic", "Companion")])
         self.assertTrue(self.can_reach_location("Victory (Snowdwellers)"))
+
+
+class TestForcePointsFromOldSeeds(WildfrostTestBase):
+    def test_old_toggles(self) -> None:
+        from ..world import force_points
+        self.assertEqual(force_points({"force_storm_bells_up_to": 12}), 12)
+        # Each old toggle added one pack: one of them is 20 (one pack), both 22 (two).
+        self.assertEqual(force_points({"force_storm_bells": True, "force_overcrank": False}), 20)
+        self.assertEqual(force_points({"force_storm_bells": True, "force_overcrank": True}), 22)
+        self.assertEqual(force_points({"force_storm_bells": False, "force_overcrank": True}), 20)
+        self.assertEqual(force_points({"force_storm_bells": False, "force_overcrank": False}), 0)
 
 
 def pack(clan: str, kind: str, n: int = 1) -> str:
@@ -257,7 +350,7 @@ class TestDeckStrength(WildfrostTestBase):
 
 
 class TestTrueFinalKit(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan"}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss"}
 
     def test_needs_packs_and_bells(self) -> None:
         self.collect_bells(TRUE_FINAL_BELLS_NEEDED)
@@ -269,7 +362,7 @@ class TestTrueFinalKit(BellTestBase):
 
 
 class TestTrueFinalKitForced(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan", "force_storm_bells": True}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "force_storm_bells_up_to": 10}
 
     def test_needs_one_more_pack(self) -> None:
         self.collect_bells(TRUE_FINAL_BELLS_NEEDED)
@@ -457,10 +550,14 @@ class TestCardChallenges(WildfrostTestBase):
         self.collect(sneezle)
         self.assertTrue(self.can_reach_location(location))
         self.remove(sneezle)
+        # Cards that do it alone; a pack dealt one of them beside the card under test passes alone too.
+        solo = ("LuminCat", "Bumblebee", "BlazeTea")
         for alone, partner in (("Badoo", "CardUpgradeCake"), ("CardUpgradeBoost", "Gearhead")):
             with self.subTest(pair=(alone, partner)):
                 self.collect_card(alone)
-                self.assertEqual(self.can_reach_location(location), self.pack_name(alone) == self.pack_name(partner))
+                pack = next((cards for cards in self.world.pack_contents.values() if f"card:{alone}" in cards), [])
+                shares = self.pack_name(alone) == self.pack_name(partner) or any(f"card:{c}" in pack for c in solo)
+                self.assertEqual(self.can_reach_location(location), shares)
                 self.collect_card(partner)
                 self.assertTrue(self.can_reach_location(location))
                 self.remove_by_name(list({self.pack_name(alone), self.pack_name(partner)}))
@@ -474,6 +571,7 @@ class TestCardChallenges(WildfrostTestBase):
 
 class TestStartingTribe(WildfrostTestBase):
     options = {**WildfrostTestBase.options, "starting_tribe": "clunkmasters"}
+    pack_name = TestCardChallenges.pack_name
 
     def test_start_tribe_precollected_not_in_pool(self) -> None:
         self.assertEqual([i.name for i in self.multiworld.precollected_items[self.player]], ["Clunkmasters", self.world.starting_pet])
@@ -497,6 +595,17 @@ class TestStartingTribe(WildfrostTestBase):
                 with self.subTest(location=name):
                     self.assertTrue(self.can_reach_location(name))
 
+    def test_smackback_needs_a_smackback_source(self) -> None:
+        # Clunkmaster leaders have no Smackback: another clan, Gojiber or the Punchfist Charm.
+        location = "Challenge - Use Smackback to kill 20 enemies"
+        self.assertFalse(self.can_reach_location(location))
+        for items in (["Snowdwellers"], ["Shademancers"], [self.pack_name("Noggin")],
+                      [self.pack_name("CardUpgradePunchfist")]):
+            with self.subTest(items=items):
+                self.collect_by_name(items)
+                self.assertTrue(self.can_reach_location(location))
+                self.remove_by_name(items)
+
 
 class TestDefaults(WildfrostTestBase):
     """With no options set: one True Final Boss win, one extra bell, 10% traps (the user's call, 2026-11-02)."""
@@ -508,6 +617,7 @@ class TestDefaults(WildfrostTestBase):
         self.assertEqual(slot_data["goal"], 1)
         self.assertEqual(slot_data["clans_required"], 1)
         self.assertEqual(slot_data["extra_storm_bells"], 1)
+        self.assertEqual(slot_data["force_storm_bells_up_to"], 10)  # on by default (the user's call, 2026-11-06)
         self.assertEqual(self.world.options.trap_percentage.value, 10)
         self.assertEqual([i.name for i in self.multiworld.itempool].count(STORM_BELL), STORM_BELL_LEVELS + 1)
         self.assertTrue(TRUE_FINAL[0] in {loc.name for loc in self.multiworld.get_locations(self.player)})
@@ -564,7 +674,7 @@ def evaluate(rule: list, have: dict[str, int]) -> bool:
 
 
 class TestLocationRulesForClient(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan", "force_storm_bells": True}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "force_storm_bells_up_to": 10}
 
     def check_matches(self) -> None:
         rules = self.world.fill_slot_data()["location_rules"]
@@ -593,15 +703,19 @@ class TestLocationRulesForClient(BellTestBase):
 
     def test_bell_kits(self) -> None:
         kits = self.world.fill_slot_data()["bell_kits"]
-        self.assertEqual([levels for levels, _ in kits], [5, 6, 7])
-        # Force Storm Bells adds one more: a companion or item pack, or three charms.
-        extra = {"extra": 1, "charms_per_pack": 3}
-        self.assertEqual(kits[0][1], [{"Companion": 1, "Item": 1, "Charm": 0, **extra}, {"Companion": 1, "Item": 0, "Charm": 6, **extra}])
-        self.assertEqual(kits[1][1], [{"Companion": 2, "Item": 2, "Charm": 3, **extra}])
+        # 2 storm points, 4-8, 10 (the True Final Boss), 12, then 14-20 and Overcrank.
+        self.assertEqual([levels for levels, _ in kits], [1, 4, 5, 6, 11])
+        # Each level's forced extra: none at 2, one at 4-12, two from 14: a companion or item pack, or three charms.
+        extra = lambda n: {"extra": n, "charms_per_pack": 3}
+        self.assertEqual(kits[0][1], [{"Companion": 1, "Item": 1, "Charm": 0, **extra(0)}, {"Companion": 1, "Item": 0, "Charm": 6, **extra(0)}])
+        self.assertEqual(kits[1][1], [{"Companion": 1, "Item": 1, "Charm": 0, **extra(1)}, {"Companion": 1, "Item": 0, "Charm": 6, **extra(1)}])
+        self.assertEqual(kits[2][1], [{"Companion": 2, "Item": 2, "Charm": 3, **extra(1)}])
+        self.assertEqual(kits[3][1], [{"Companion": 2, "Item": 3, "Charm": 6, **extra(1)}])
+        self.assertEqual(kits[4][1], [{"Companion": 2, "Item": 3, "Charm": 6, **extra(2)}])
 
 
 class TestSecondChecks(BellTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan"}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss"}
 
     def test_seconds_share_their_first_rule(self) -> None:
         seconds = [name for _, name, _, info in LOCATIONS if info.get("second")]
@@ -636,28 +750,72 @@ class TestSunbringerPastWinGoal(WildfrostTestBase):
 
 
 class TestSunbringerIsTheGoal(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan", "clans_required": 1}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "clans_required": 1}
 
     def test_filler_only(self) -> None:
         self.assert_filler_only("Sunbringer", True)
 
 
 class TestSunbringerIsTheOvercrankedGoal(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "goal": "overcranked_each_clan", "clans_required": 1}
+    options = {**WildfrostTestBase.options, "goal": "overcranked_true_final_boss", "clans_required": 1}
 
     def test_filler_only(self) -> None:
         self.assert_filler_only("Sunbringer", True)
 
 
 class TestSunbringerCountsWithTwoClans(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "goal": "true_final_boss_each_clan", "clans_required": 2}
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "clans_required": 2}
 
     def test_not_filler_only(self) -> None:
         self.assert_filler_only("Sunbringer", False)
 
 
 class TestSunbringerCountsOvercrankedEachClan(WildfrostTestBase):
-    options = {**WildfrostTestBase.options, "goal": "overcranked_each_clan"}
+    options = {**WildfrostTestBase.options, "goal": "overcranked_true_final_boss"}
 
     def test_not_filler_only(self) -> None:
         self.assert_filler_only("Sunbringer", False)
+
+
+class TestReverseStormBells(BellTestBase):
+    """Reverse Storm Bells: start Overcranked, each bell lowers the floor (rules.REVERSE_PACKS)."""
+    options = {**WildfrostTestBase.options, "progression_direction": "reverse", "force_storm_bells_up_to": 22,
+               "goal": "final_boss", "clans_required": 1}
+
+    def test_options_set(self) -> None:
+        slot_data = self.world.fill_slot_data()
+        self.assertEqual(slot_data["progression_direction"], 1)
+        self.assertEqual(slot_data["goal"], 1)  # the True Final Boss, whatever the yaml said
+        self.assertEqual(slot_data["force_storm_bells_up_to"], 0)
+        self.assertTrue(TRUE_FINAL)
+
+    def test_area_1_fights_from_the_start(self) -> None:
+        self.assertTrue(self.can_reach_location("Area 1 Battle - The Snowbo Squad (Snowdwellers)"))
+        self.assertTrue(self.can_reach_location("Area 1 Battle - The Frost Shades (Snowdwellers)"))
+        self.assertFalse(self.can_reach_location("Area 1 Boss - Bamboozle (Snowdwellers)"))
+
+    def test_area_1_boss_by_packs_or_bells(self) -> None:
+        boss = "Area 1 Boss - Bamboozle (Snowdwellers)"
+        # Overcranked: two packs, one of them as three charms.
+        self.collect_by_name([pack("General", "Companion")])
+        self.assertFalse(self.can_reach_location(boss))
+        self.collect_by_name(charms("Basic", 3))
+        self.assertTrue(self.can_reach_location(boss))
+
+    def test_area_1_boss_by_bells(self) -> None:
+        boss = "Area 1 Boss - Bamboozle (Snowdwellers)"
+        self.collect_bells(8)
+        self.assertFalse(self.can_reach_location(boss))
+        self.collect_bells(1)  # down to 4 storm points: no packs needed
+        self.assertTrue(self.can_reach_location(boss))
+
+    def test_true_final_boss_needs_no_bell_run(self) -> None:
+        self.collect_all_but([STORM_BELL, "Victory"])
+        self.collect_bells(STORM_BELL_LEVELS - 1)
+        for name in TRUE_FINAL + ["Victory (Snowdwellers)"]:
+            with self.subTest(location=name):
+                self.assertFalse(self.can_reach_location(name))
+        self.collect_bells(1)
+        for name in TRUE_FINAL + ["Victory (Snowdwellers)"]:
+            with self.subTest(location=name):
+                self.assertTrue(self.can_reach_location(name))
