@@ -43,16 +43,18 @@ The mod remembers these. The popup opens on every Play: [b]Continue[/b] carries 
 
 [h2]Options[/h2]
 [list]
-[*][b]Goal:[/b] win a run, beat the True Final Boss, or beat it Overcranked, with each clan
-[*][b]Clans Required:[/b] how many clans (1 to 3) need that win to finish the seed. The default is one True Final Boss win.
 [*][b]Starting Tribe:[/b] Snowdwellers, Shademancers, Clunkmasters or random. The other two are items.
+[*][b]Progression Direction:[/b] Forward (the default): each of the 11 Progressive Storm Bells raises the storm point limit by 2, and the last unlocks Overcrank. Reverse: runs start Overcranked, each bell lowers the bells a run must start with, and the goal is the True Final Boss, which only comes on a run with no bells.
+[*][b]Goal:[/b] Final Boss, True Final Boss (the default) or Overcranked True Final Boss
+[*][b]Goal Clans Required:[/b] how many clans (1 to 3) need that win, each with a run of its own. The default is one.
 [*][b]Extra Storm Bells:[/b] spare Progressive Storm Bells, so the ones you need turn up sooner
-[*][b]Force Storm Bells:[/b] runs must start with as many storm points as you've unlocked (up to 10)
-[*][b]Force Overcrank:[/b] once Overcrank is unlocked, every run must be Overcranked
+[*][b]Force Storm Bells Up To[/b] (10 by default): runs must start with as many storm points as you've unlocked, up to this number, as far as the tribe's packs carry it. 22 also forces Overcrank; 0 turns it off.
 [*][b]Trap Percentage:[/b] how much filler is traps instead of Bling and boons
-[*][b]DeathLink:[/b] losing a run kills the other DeathLink players, and theirs makes your leader flee
 [*][b]Game Speed Up:[/b] lets F6 speed the game up (1.5x or 2x)
 [*][b]Leader Reroll:[/b] a button (or R) on the leader select screen rerolls the leaders, as often as you like
+[*][b]Disable Possessed Final Boss[/b] (off by default): the Final Boss always fights with its own deck, not your last winning deck
+[*][b]DeathLink:[/b] losing a run kills the other DeathLink players
+[*][b]Death Link Damage Percent[/b] (100 by default): how hard a received death hits your leader, as a share of its max health, in the next battle. If it survives, a Gunk Fruit joins your deck for the run. 100 makes it flee, ending the run.
 
 [/list]
 
