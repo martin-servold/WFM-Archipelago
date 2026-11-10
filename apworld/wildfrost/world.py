@@ -48,6 +48,8 @@ class WildfrostWorld(World):
     # Universal Tracker rebuilds the world from slot_data alone (no yaml): generate_early takes the
     # options and packs that logic needs from re_gen_passthrough instead of rolling them.
     ut_can_gen_without_yaml = True
+    # Bells fit the goal (items.storm_bells_in_pool); False when Universal Tracker rebuilds an older seed.
+    goal_sized_bells: bool = True
 
     def generate_early(self) -> None:
         slot_data = getattr(self.multiworld, "re_gen_passthrough", {}).get(self.game)
@@ -58,6 +60,9 @@ class WildfrostWorld(World):
             self.options.extra_storm_bells.value = slot_data.get("extra_storm_bells", 0)
             self.options.force_storm_bells_up_to.value = force_points(slot_data)
             self.options.progression_direction.value = progression_direction(slot_data)
+            self.goal_sized_bells = slot_data.get("goal_sized_bells", False)
+            # Seeds from before New Challenges have the charm challenges' second checks.
+            self.options.new_challenges.value = int(slot_data.get("new_challenges", False))
             self.pack_contents = slot_data["packs"]
             self.starting_pet = slot_data["starting_pet"]
         else:
@@ -67,6 +72,11 @@ class WildfrostWorld(World):
                     logging.warning(f"Wildfrost: {self.player_name} plays Reverse Storm Bells, so the goal is the True Final Boss")
                     self.options.goal.value = self.options.goal.option_true_final_boss
                 self.options.force_storm_bells_up_to.value = 0
+            elif self.options.goal == self.options.goal.option_true_final_boss:
+                # The pool only has the 5 bells it needs plus extras (items.storm_bells_in_pool), so
+                # forcing past what they reach (and the extra pack logic adds at 22) would never apply.
+                cap = 2 * (items.TRUE_FINAL_BELLS + self.options.extra_storm_bells.value)
+                self.options.force_storm_bells_up_to.value = min(self.options.force_storm_bells_up_to.value, cap)
             # Storm points come in steps of 2: an odd number means the even one below.
             self.options.force_storm_bells_up_to.value -= self.options.force_storm_bells_up_to.value % 2
             self.pack_contents = items.fill_packs(self)
@@ -112,6 +122,12 @@ class WildfrostWorld(World):
             # Bell levels (items.STORM_BELL_LEVELS). The client keeps the old 7-level steps (5 storm
             # points, up to 10, Overcrank) for seeds without it or with fewer than 11.
             "storm_bell_levels": items.STORM_BELL_LEVELS,
+            # The bell pool fits the goal (items.storm_bells_in_pool) and the Final Boss goal has no
+            # Sunbringer; Universal Tracker rebuilds seeds without this key the old way.
+            "goal_sized_bells": self.goal_sized_bells,
+            # New Challenges: the client detects the "challenge:ap:<slug>" checks, and the charm
+            # challenges send one check, not two.
+            "new_challenges": bool(self.options.new_challenges),
             "death_link": bool(self.options.death_link),
             # How hard a received death hits the leader (the client's DeathLinkHandler); 100 flees.
             "death_link_damage_percent": self.options.death_link_damage_percent.value,

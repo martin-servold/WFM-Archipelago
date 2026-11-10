@@ -405,6 +405,8 @@
     <Compile Include="LeaderReroll.cs" />
     <Compile Include="LogText.cs" />
     <Compile Include="LocationHooks.cs" />
+    <Compile Include="NewChallenges.cs" />
+    <Compile Include="NewChallengesDisplay.cs" />
     <Compile Include="ProfileSwitch.cs" />
     <Compile Include="SurveyLog.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

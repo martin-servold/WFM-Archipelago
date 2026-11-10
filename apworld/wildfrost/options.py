@@ -7,9 +7,12 @@ class Goal(Choice):
     """
     The win each clan needs. Goal Clans Required sets how many clans (Snowdwellers, Shademancers, Clunkmasters) need
     it, each with a run of its own; the run that completes the last one ends the seed.
-    Final Boss: win a run.
-    True Final Boss: beat the True Final Boss (10 storm points of bells).
-    Overcranked True Final Boss: beat the True Final Boss on an Overcranked run (every bell).
+    Final Boss: win a run. The 11 Progressive Storm Bells are filler here: they only raise the difficulty.
+    True Final Boss: beat the True Final Boss (10 storm points of bells). Only the 5 bells it needs are in the pool, plus
+    Extra Storm Bells, so the storm point limit tops out at 10 plus 2 for each extra.
+    Overcranked True Final Boss: beat the True Final Boss on an Overcranked run (all 11 bells).
+    Ignored with Progression Direction: Reverse, where runs start Overcranked and the goal is always the True Final Boss
+    on a run with no bells.
     """
 
     display_name = "Goal"
@@ -50,8 +53,9 @@ class StartingTribe(Choice):
 
 class ExtraStormBells(Range):
     """
-    Progressive Storm Bells beyond the 11 levels (storm point caps 2, 4, ... 20, then Overcrank).
-    Extras make the ones the goal needs turn up sooner.
+    Progressive Storm Bells beyond the ones the goal needs: 5 for the True Final Boss, all 11 for the others (storm point
+    caps 2, 4, ... 20, then Overcrank). Extras make the ones the goal needs turn up sooner, and with the True Final Boss
+    each one raises the storm point limit by 2.
     """
 
     display_name = "Extra Storm Bells"
@@ -86,7 +90,8 @@ class ForceStormBellsUpTo(Range):
     all later runs harder. 22 also forces Overcrank: once you have every bell level, a run won't start until the
     Overcrank lever is pulled. 0 turns it off. Odd numbers count as the even number below. Only the bells a run's tribe
     has the packs for are forced (the packs logic expects for a win at that strength). Logic expects one more pack of
-    any kind for every win, and one more again at 22. Ignored with Progression Direction: Reverse.
+    any kind for every win, and one more again at 22. With the True Final Boss goal, it goes no higher than the bells in the
+    pool reach (10, plus 2 for each Extra Storm Bell). Ignored with Progression Direction: Reverse.
     """
 
     display_name = "Force Storm Bells Up To"
@@ -105,6 +110,16 @@ class LeaderReroll(DefaultOnToggle):
     display_name = "Leader Reroll"
 
 
+class NewChallenges(DefaultOnToggle):
+    """
+    Every challenge that unlocks a charm in the base game is two checks. On: its second check is replaced by 25
+    challenges made for Archipelago (buy upgraded cards from the Charm Merchant, fire the I.C.G.M, apply 40 Ink, ...),
+    so there's more to do for the same number of checks. Off: each of those challenges counts twice, as before.
+    """
+
+    display_name = "New Challenges"
+
+
 class DisablePossessedFinalBoss(Toggle):
     """
     After a win the game turns your winning deck into the next Final Boss fight (your old leader and companions,
@@ -115,9 +130,10 @@ class DisablePossessedFinalBoss(Toggle):
     display_name = "Disable Possessed Final Boss"
 
 
-class GameSpeedUp(Toggle):
+class GameSpeedUp(DefaultOnToggle):
     """
-    Lets F6 speed the game up (1.5x or 2x) while you play this slot. Off: the game always runs at normal speed.
+    Lets F6 speed the game up (1.5x or 2x) while you play this slot. The game starts at normal speed either way, so
+    leaving it on costs nothing. Off: the game always runs at normal speed.
     """
 
     display_name = "Game Speed Up"
@@ -160,6 +176,7 @@ class WildfrostOptions(PerGameCommonOptions):
     extra_storm_bells: ExtraStormBells
     force_storm_bells_up_to: ForceStormBellsUpTo
     trap_percentage: TrapPercentage
+    new_challenges: NewChallenges
     game_speed_up: GameSpeedUp
     leader_reroll: LeaderReroll
     disable_possessed_final_boss: DisablePossessedFinalBoss

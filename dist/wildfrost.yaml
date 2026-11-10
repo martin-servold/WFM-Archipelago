@@ -8,7 +8,8 @@ Wildfrost:
   extra_storm_bells: 1
   force_storm_bells_up_to: 10
   trap_percentage: 10
-  game_speed_up: false
+  new_challenges: true
+  game_speed_up: true
   leader_reroll: true
   disable_possessed_final_boss: false
   death_link: false

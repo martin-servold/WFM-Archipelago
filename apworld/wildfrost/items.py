@@ -33,12 +33,16 @@ STORM_BELL = "Progressive Storm Bell"
 SPIKE_PET = "Spike Pet"
 LOKI_PET = "Loki Pet"
 SNEEZLE_PET = "Sneezle Pet"
+# Binku applies Ink: with New Challenges, it counts for "Apply 40 Ink" (the user's call, 2026-11-08).
+INK_PET = "Binku Pet"
 PROGRESSION_PETS = {SPIKE_PET, LOKI_PET, SNEEZLE_PET}
 # Steps of two storm points (decided by the user 2026-11-06): caps 2, 4, ... 20, then Overcrank (22).
 # Reverse runs the other way: Overcranked, 20, 18, ... 2, then no bells. The client lifts vanilla's
 # 10-point cap for these seeds; seeds from before (slot_data without storm_bell_levels) had 7 levels:
 # 5 storm points, up to 10, Overcrank.
 STORM_BELL_LEVELS = 11
+# The 5th bell reaches the True Final Boss's 10 storm points.
+TRUE_FINAL_BELLS = 5
 
 CLASSIFICATION_BY_KIND = {
     # Tribes gate tribe-locked battles and the "win with tribe" challenges.
@@ -59,8 +63,35 @@ class WildfrostItem(Item):
     game = "Wildfrost"
 
 
+def forward(world: WildfrostWorld) -> bool:
+    return world.options.progression_direction != world.options.progression_direction.option_reverse
+
+
+def bells_are_filler(world: WildfrostWorld) -> bool:
+    """A forward Final Boss goal: bells gate nothing there, they only raise (and force) the difficulty."""
+    return world.goal_sized_bells and forward(world) and world.options.goal == world.options.goal.option_final_boss
+
+
+def storm_bells_in_pool(world: WildfrostWorld) -> int:
+    """
+    Bell levels in the pool, before Extra Storm Bells (decided by the user 2026-11-08: with all 11 in a
+    forward True Final Boss seed, the 5 it needs came early). Forward True Final Boss seeds, any number of
+    clans, get the 5 they need, so their storm point limit tops out at 10 plus the extras. The others get
+    all 11: Overcranked and Reverse need every one, and the Final Boss goal's are filler.
+    Seeds from before (goal_sized_bells false, for Universal Tracker) always had all 11.
+    """
+    if world.goal_sized_bells and forward(world) and world.options.goal == world.options.goal.option_true_final_boss:
+        return TRUE_FINAL_BELLS
+    return STORM_BELL_LEVELS
+
+
 def create_item(world: WildfrostWorld, name: str) -> WildfrostItem:
-    classification = ItemClassification.progression if name in PROGRESSION_PETS else CLASSIFICATION_BY_KIND[KIND_BY_NAME[name]]
+    # New Challenges need Binku (Ink) and the three map events (their challenges) in logic.
+    progression = name in PROGRESSION_PETS or (
+        world.options.new_challenges and (name == INK_PET or KIND_BY_NAME[name] == "Event"))
+    classification = ItemClassification.progression if progression else CLASSIFICATION_BY_KIND[KIND_BY_NAME[name]]
+    if name == STORM_BELL and bells_are_filler(world):
+        classification = ItemClassification.filler
     return WildfrostItem(name, classification, ITEM_NAME_TO_ID[name], world.player)
 
 
@@ -105,7 +136,11 @@ def create_all_items(world: WildfrostWorld) -> None:
         world.create_item(name) for name, kind in KIND_BY_NAME.items()
         if kind in ("Tribe", "Event", "Pet", "Pack", "Charm") and name not in start
     ]
-    itempool += [world.create_item(STORM_BELL) for _ in range(STORM_BELL_LEVELS + world.options.extra_storm_bells.value)]
+    bells = [world.create_item(STORM_BELL) for _ in range(storm_bells_in_pool(world) + world.options.extra_storm_bells.value)]
+    if bells and bells_are_filler(world) and world.options.new_challenges:
+        # Some New Challenges ring a storm bell, so one bell stays progression (the user's call, 2026-11-08).
+        bells[0].classification = ItemClassification.progression
+    itempool += bells
     free = len(world.multiworld.get_unfilled_locations(world.player)) - len(itempool)
     itempool += [world.create_filler() for _ in range(free)]
     world.multiworld.itempool += itempool

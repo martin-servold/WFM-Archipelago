@@ -18,7 +18,7 @@ class WildfrostTestBase(WorldTestBase):
     game = "Wildfrost"
     world: WildfrostWorld
     options = {"starting_tribe": "snowdwellers", "goal": "final_boss", "clans_required": 3,
-               "extra_storm_bells": 0, "force_storm_bells_up_to": 0, "trap_percentage": 0}
+               "extra_storm_bells": 0, "force_storm_bells_up_to": 0, "trap_percentage": 0, "new_challenges": False}
 
     def world_setup(self, *args, **kwargs) -> None:
         super().world_setup(*args, **kwargs)

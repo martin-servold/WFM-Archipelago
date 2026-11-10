@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from rule_builder.rules import And, Has, HasAll, HasFromList, Or
 
 from .data import CARDS, ITEMS, LOCATIONS
-from .items import LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS
+from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS
 from .locations import CHALLENGE_REGION, CLANS, SUNBRINGER, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
@@ -30,6 +30,10 @@ CHALLENGE_NEEDS_TRIBE = {
     "Challenge Charm 6": "Magic",
     "Challenge Companion 5": "Magic",
     "Challenge Companion 6": "Clunk",
+    # New Challenges (the user's calls, 2026-11-08).
+    "ap:junk": "Clunk",
+    "ap:haze": "Clunk",
+    "ap:overburn": "Magic",
 }
 # ...and that clan's cards. One Punch is the Frost Guardian with a Scrappy Sword, a Snowdweller
 # starting card, so it needs a Snowdweller win.
@@ -47,9 +51,8 @@ def required_tribes(key: str, info: dict) -> set[str]:
     return {t for t in (info["run_tribe"], info["tribe"]) if t in CLANS}
 
 
-# Storm bell levels (items.STORM_BELL_LEVELS): each one adds 2 storm points, so the 5th reaches the
-# True Final Boss's 10; the 11th unlocks Overcrank.
-TRUE_FINAL_BELLS = 5
+# Storm bell levels (items.STORM_BELL_LEVELS): each one adds 2 storm points, so the 5th
+# (items.TRUE_FINAL_BELLS) reaches the True Final Boss's 10; the 11th unlocks Overcrank.
 
 
 # Deck strength (decided by the user 2026-10-30). Fights 1-5 of a run (map tiers 0-4: two battles,
@@ -248,9 +251,28 @@ def two_companions_and_one_more(clan: str):
     return Or(packs(clan, 2, 1, 0), packs(clan, 2, 0, CHARMS_PER_PACK))
 
 
+def card_packs(clan: str, count: int):
+    """Companion and item packs together."""
+    return HasFromList(*(clan_packs(clan, "Companion") + clan_packs(clan, "Item")), count=count)
+
+
+# New Challenges that take the second boss's kit (the Final Boss kit's packs, from map tier 5 on).
+AREA_2_KITS = ("ap:shade_sculptor",)
+
+
 def challenge_kit(info: dict, extra: int, reversed_bells: bool = False):
     if reversed_bells:
         return reverse_challenge_kit(info)
+    internal = info["internal"]
+    # New Challenges whose packs must be one clan's, with its kit (the user's calls, 2026-11-08).
+    if internal == "ap:charm_merchant":  # the merchant sells charmed cards: 4 card packs and 6 charms
+        return any_clan(lambda clan: And(card_packs(clan, 4), packs(clan, 0, 0, 6)))
+    if internal == "ap:charms_on_card":  # 4+ charms on a card: 6 charms, past the second boss
+        return any_clan(lambda clan: And(final_boss_kit(clan, extra), packs(clan, 0, 0, 6)))
+    if internal == "ap:curse_charmed":  # a companion or item pack to be offered cursed cards from
+        return any_clan(lambda clan: card_packs(clan, 1))
+    if internal in AREA_2_KITS:
+        return any_clan(lambda clan: final_boss_kit(clan, extra))
     if info["internal"] == SUNBRINGER:  # the True Final Boss, with any clan
         return any_clan(lambda clan: true_final_kit(clan, extra))
     if info["internal"] in NEEDS_COMPANION_AND_ITEM:
@@ -301,6 +323,13 @@ SACRIFICE_CARDS = ("SnufferMask", "SnowMaul", "ZapOrb", "TailsFive", "TheBaker",
 TEETH_CARDS = ("SharkTooth", "TigrisMask", "Kokonut", "Tusk")  # Tiger Skull, Tigris Mask, Taiga, Tusk
 DEMONIZE_CARDS = ("CardUpgradeDemonize", "Demonheart", "Dimona", "TotemOfTheGoat")  # Goat Charm, Demonheart, Dimona, Totem of the Goat
 SHROOM_CARDS = ("Shroominator", "Fulbert", "Fungoose", "Wort", "HongosHammer", "SporePack", "ShroomLauncher")
+# New Challenges (the user's lists, 2026-11-08).
+SPICE_CARDS = ("PepperFlag", "Pyra", "SpiceStones", "Peppereaper", "Pimento", "DragonflamePepper")
+HAZE_CARDS = ("Voodoo", "HazeBlaze", "FoggyBrew")  # Hazeblazer, Haze Keg, Foggy Brew
+# The storm bells some New Challenges ring (cursed crowns, Gobblers, Gunk Fruit, ...) cost at most the
+# first Progressive Storm Bell's 2 points (the user's call, 2026-11-08). Reverse runs start with every bell.
+BELL_CHALLENGES = ("ap:cursed_crowns", "ap:injure", "ap:curse_charmed", "ap:gobblers", "ap:gunk_boss",
+                   "ap:full_price_crown")
 
 
 class CardRules:
@@ -387,6 +416,31 @@ class CardRules:
             # Minimalist: Toaster empties the deck, or the Gunk Bugs fight does it for you.
             "Challenge Charm 23": Or(self.card("Havok"), *(battle_rule(key, info, self.extra, self.reversed) for key, _, _, info in LOCATIONS
                                                            if key.startswith("battle:2:Mimiks:"))),
+        }
+        if internal.startswith("ap:"):
+            return self.new_challenge(internal)
+        return rules.get(internal)
+
+    def new_challenge(self, internal: str):
+        """New Challenges' own needs (the user's calls, 2026-11-08); kits are in challenge_kit."""
+        if internal in BELL_CHALLENGES and not self.reversed:
+            return Has(STORM_BELL)
+        rules = {
+            "ap:charm_merchant": Has("Charm Merchant"),
+            # A Clunker to copy: one from a pack, or Woodhead from the Snowdweller starting deck.
+            "ap:shade_sculptor": both(Has("Shade Sculptor"), Or(Has(CLANS["Basic"]), self.any_of(CLUNKERS))),
+            "ap:gnome_traveller": Has("Gnome Traveller"),
+            "ap:haze": self.any_of(HAZE_CARDS),
+            "ap:ink": Or(Has(CLANS["Clunk"]), self.card("CardUpgradeInk"), Has(INK_PET)),  # Squid Charm, Binku
+            "ap:icgm": self.card("OhNo"),
+            "ap:egg": self.card("Egg"),
+            "ap:soulbound": self.card("VoidStaff"),  # Soulbound Skulls
+            "ap:sheepopper": self.card("PopPopper"),  # Sheepopper Mask
+            "ap:skull_muffin": self.any_of(("SkullMuffin", "TheBaker")),
+            "ap:bom": Or(Has(CLANS["Basic"]), Has(CLANS["Clunk"])),
+            "ap:spice": self.two_of(SPICE_CARDS),
+            "ap:stormbear": self.card("StormbearSpirit"),
+            "ap:moko_totem": both(self.card("Peppermaton"), self.two_of(SPICE_CARDS)),
         }
         return rules.get(internal)
 

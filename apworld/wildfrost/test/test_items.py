@@ -1,9 +1,12 @@
 import unittest
 
+from BaseClasses import ItemClassification, LocationProgressType
+
 from ..data import CARDS, ITEMS, LOCATIONS, PACK_SIZE
-from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS
-from ..locations import CLANS
-from ..rules import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED, required_tribes
+from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, storm_bells_in_pool
+from ..items import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED
+from ..locations import CLANS, SUNBRINGER, included
+from ..rules import required_tribes
 from ..world import progression_direction
 from . import WildfrostTestBase
 
@@ -55,7 +58,7 @@ class TestDefaultPool(WildfrostTestBase):
             if item == "Snowdwellers":
                 continue  # the starting tribe here; TestStartingTribe covers it
             gated = [name for key, name, _, info in LOCATIONS
-                     if tribe in required_tribes(key, info) and not info.get("true_final")]
+                     if tribe in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")]
             gated.append(f"Victory ({item})")
             if item == "Clunkmasters":
                 # Toaster and the Gunk Bugs fight are both Clunkmaster.
@@ -101,6 +104,18 @@ class TestGoalWinEachClan(WildfrostTestBase):
         pool = [i.name for i in self.multiworld.itempool]
         self.assertEqual(pool.count(STORM_BELL), STORM_BELL_LEVELS)
 
+    def test_bells_are_filler(self) -> None:
+        # Nothing needs them: they only raise (and force) the difficulty (the user's call, 2026-11-08).
+        for bell in self.get_items_by_name(STORM_BELL):
+            self.assertEqual(bell.classification, ItemClassification.filler)
+
+    def test_no_sunbringer(self) -> None:
+        # Its rule needs bells logic can't count, so it went with the True Final Boss checks.
+        names = {loc.name for loc in self.multiworld.get_locations(self.player)}
+        self.assertNotIn("Challenge - Sunbringer", names)
+        self.assertNotIn("Challenge - Sunbringer #2", names)
+        self.assertNotIn("challenge:Challenge Charm 16", self.world.fill_slot_data()["location_rules"])
+
     def test_bell_levels_in_slot_data(self) -> None:
         # The client steps by 2 storm points with 11 levels, and keeps the old 7 steps without the key.
         self.assertEqual(STORM_BELL_LEVELS, 11)
@@ -128,8 +143,11 @@ class TestGoalTrueFinalBoss(BellTestBase):
                 self.assertTrue(self.can_reach_location(name))
 
     def test_extra_bells(self) -> None:
+        # Only the 5 bells the goal needs, plus the extras (the user's call, 2026-11-08).
         pool = [i.name for i in self.multiworld.itempool]
-        self.assertEqual(pool.count(STORM_BELL), STORM_BELL_LEVELS + 2)
+        self.assertEqual(pool.count(STORM_BELL), TRUE_FINAL_BELLS_NEEDED + 2)
+        for bell in self.get_items_by_name(STORM_BELL):
+            self.assertEqual(bell.classification, ItemClassification.progression)
 
 
 class TestGoalOvercranked(BellTestBase):
@@ -149,7 +167,7 @@ class TestForceStormBells(WildfrostTestBase):
 
     def test_slot_data(self) -> None:
         self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 10)
-        self.assertIs(self.world.fill_slot_data()["game_speed_up"], False)  # off by default
+        self.assertIs(self.world.fill_slot_data()["game_speed_up"], True)  # on by default (the user's call, 2026-11-08)
 
     def test_discounted_items_need_three_item_packs(self) -> None:
         location = "Challenge - Buy 5 discounted items"
@@ -582,7 +600,7 @@ class TestStartingTribe(WildfrostTestBase):
 
     def test_snowdwellers_gated(self) -> None:
         gated = [name for key, name, _, info in LOCATIONS
-                 if "Basic" in required_tribes(key, info) and not info.get("true_final")]
+                 if "Basic" in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")]
         # ...and the challenges whose cards are all Snowdweller cards.
         gated += ["Victory (Snowdwellers)"] + with_seconds(["Challenge - Tough Nut", "Challenge - Toxic", "Challenge - Bigger Hitter"])
         self.assertIn("Challenge - One Punch", gated)
@@ -619,8 +637,101 @@ class TestDefaults(WildfrostTestBase):
         self.assertEqual(slot_data["extra_storm_bells"], 1)
         self.assertEqual(slot_data["force_storm_bells_up_to"], 10)  # on by default (the user's call, 2026-11-06)
         self.assertEqual(self.world.options.trap_percentage.value, 10)
-        self.assertEqual([i.name for i in self.multiworld.itempool].count(STORM_BELL), STORM_BELL_LEVELS + 1)
+        self.assertEqual([i.name for i in self.multiworld.itempool].count(STORM_BELL), TRUE_FINAL_BELLS_NEEDED + 1)
+        self.assertTrue(slot_data["goal_sized_bells"])
         self.assertTrue(TRUE_FINAL[0] in {loc.name for loc in self.multiworld.get_locations(self.player)})
+        self.assertTrue(slot_data["new_challenges"])  # on by default (the user's call, 2026-11-08)
+
+
+AP_CHALLENGES = [name for key, name, _, info in LOCATIONS if info.get("ap")]
+CHARM_SECONDS = [name for key, name, _, info in LOCATIONS
+                 if info.get("second") and info.get("internal", "").startswith("Challenge Charm ")]
+
+
+class TestNewChallengesOff(WildfrostTestBase):
+    def test_twins_kept(self) -> None:
+        names = {loc.name for loc in self.multiworld.get_locations(self.player)}
+        self.assertFalse(names & set(AP_CHALLENGES))
+        self.assertIn("Challenge - Big Hitter #2", names)
+        self.assertFalse(self.world.fill_slot_data()["new_challenges"])
+        self.assertEqual(self.world.create_item("Binku Pet").classification, ItemClassification.useful)
+        self.assertEqual(self.world.create_item("Charm Merchant").classification, ItemClassification.useful)
+
+
+class NewChallengesBase(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "new_challenges": True}
+    pack_name = TestCardChallenges.pack_name
+
+
+class TestNewChallenges(NewChallengesBase):
+    def test_swap(self) -> None:
+        # The 26 charm challenge twins go, the 25 new challenges come in; the boss twins stay.
+        names = {loc.name for loc in self.multiworld.get_locations(self.player)}
+        self.assertEqual(len(AP_CHALLENGES), 25)
+        self.assertEqual(len(CHARM_SECONDS), 26)
+        self.assertTrue(set(AP_CHALLENGES) <= names)
+        self.assertFalse(names & set(CHARM_SECONDS))
+        self.assertTrue(any(n.endswith(" #2") and "Boss" in n for n in names))
+        self.assertTrue(self.world.fill_slot_data()["new_challenges"])
+
+    def test_bling_boss_filler_only(self) -> None:
+        location = self.multiworld.get_location("Challenge - Reach a boss holding 200 or more Bling", self.player)
+        self.assertEqual(location.progress_type, LocationProgressType.EXCLUDED)
+
+    def test_events_and_binku_progression(self) -> None:
+        for name in ("Charm Merchant", "Shade Sculptor", "Gnome Traveller", "Binku Pet"):
+            with self.subTest(item=name):
+                self.assertEqual(self.world.create_item(name).classification, ItemClassification.progression)
+
+    def test_icgm_needs_its_pack_and_clunkmasters(self) -> None:
+        location = "Challenge - Fire the I.C.G.M"
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name([self.pack_name("OhNo")])
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name(["Clunkmasters"])
+        self.assertTrue(self.can_reach_location(location))
+
+    def test_bell_challenges_need_a_bell(self) -> None:
+        location = "Challenge - Apply 3 Cursed Crowns"
+        self.assertFalse(self.can_reach_location(location))
+        self.collect(self.get_items_by_name(STORM_BELL)[:1])
+        self.assertTrue(self.can_reach_location(location))
+
+    def test_charm_merchant_needs_event_four_packs_six_charms(self) -> None:
+        location = "Challenge - Buy 2 upgraded cards from the Charm Merchant"
+        self.collect_by_name(["Charm Merchant"] + charms("General", 6)
+                             + [pack("General", "Companion", n) for n in (1, 2)] + [pack("General", "Item", 1)])
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name([pack("General", "Item", 2)])
+        self.assertTrue(self.can_reach_location(location))
+
+    def test_spice_needs_two_spice_cards(self) -> None:
+        location = "Challenge - Stack 20 Spice on a single unit"
+        self.collect_by_name(["Snowdwellers", self.pack_name("Pyra")])
+        cards_in_pack = [c for p, c in self.world.pack_contents.items() if "card:Pyra" in c][0]
+        spice_together = sum(f"card:{c}" in cards_in_pack for c in
+                             ("PepperFlag", "Pyra", "SpiceStones", "Peppereaper", "Pimento", "DragonflamePepper"))
+        self.assertEqual(self.can_reach_location(location), spice_together >= 2)
+        self.collect_by_name([self.pack_name("Pimento")])
+        self.assertTrue(self.can_reach_location(location))
+
+
+class TestNewChallengesFinalBoss(NewChallengesBase):
+    options = {**NewChallengesBase.options, "goal": "final_boss"}
+
+    def test_one_bell_progression(self) -> None:
+        # Final Boss bells are filler, but the bell challenges need one (the user's call, 2026-11-08).
+        classes = [bell.classification for bell in self.get_items_by_name(STORM_BELL)]
+        self.assertEqual(classes.count(ItemClassification.progression), 1)
+        self.assertEqual(classes.count(ItemClassification.filler), len(classes) - 1)
+
+
+class TestNewChallengesReverse(NewChallengesBase):
+    options = {**NewChallengesBase.options, "progression_direction": "reverse"}
+
+    def test_bell_challenges_need_no_bell(self) -> None:
+        # Reverse runs start with every bell rung.
+        self.assertTrue(self.can_reach_location("Challenge - Apply 3 Cursed Crowns"))
 
 
 class TestRandomStartingTribe(WildfrostTestBase):
@@ -744,9 +855,56 @@ class TestSecondChecks(BellTestBase):
         self.assertTrue(self.can_reach_location("Challenge - Sunbringer"))
 
 
-class TestSunbringerPastWinGoal(WildfrostTestBase):
-    def test_filler_only(self) -> None:
-        self.assert_filler_only("Sunbringer", True)
+class TestTrueFinalBossForcingCap(WildfrostTestBase):
+    """Forcing goes no higher than the bells in a True Final Boss pool reach: 10, plus 2 for each extra."""
+
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss", "extra_storm_bells": 2,
+               "force_storm_bells_up_to": 22}
+
+    def test_capped(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 14)
+
+
+class TestTrueFinalBossThreeClans(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "goal": "true_final_boss"}
+
+    def test_bells_in_pool(self) -> None:
+        pool = [i.name for i in self.multiworld.itempool]
+        self.assertEqual(pool.count(STORM_BELL), TRUE_FINAL_BELLS_NEEDED)
+
+
+class TestReverseBellsInPool(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "progression_direction": "reverse"}
+
+    def test_every_level(self) -> None:
+        # Reverse needs every bell (its goal is the True Final Boss on a no-bell run), and they count in logic.
+        pool = [i.name for i in self.multiworld.itempool]
+        self.assertEqual(pool.count(STORM_BELL), STORM_BELL_LEVELS)
+        for bell in self.get_items_by_name(STORM_BELL):
+            self.assertEqual(bell.classification, ItemClassification.progression)
+
+
+class TestOlderSeedBells(WildfrostTestBase):
+    """Universal Tracker rebuilds a seed from before goal_sized_bells with every bell level and Sunbringer."""
+
+    def test_old_pool(self) -> None:
+        self.world.goal_sized_bells = False
+        self.world.options.goal.value = self.world.options.goal.option_true_final_boss
+        self.assertEqual(storm_bells_in_pool(self.world), STORM_BELL_LEVELS)
+        self.world.options.goal.value = self.world.options.goal.option_final_boss
+        self.assertTrue(included(self.world, {"internal": SUNBRINGER}))
+        self.assertEqual(self.world.create_item(STORM_BELL).classification, ItemClassification.progression)
+        self.world.goal_sized_bells = True
+        self.assertFalse(included(self.world, {"internal": SUNBRINGER}))
+        self.assertEqual(self.world.create_item(STORM_BELL).classification, ItemClassification.filler)
+
+
+class TestOvercrankedBellsInPool(WildfrostTestBase):
+    options = {**WildfrostTestBase.options, "goal": "overcranked_true_final_boss", "extra_storm_bells": 1}
+
+    def test_every_level(self) -> None:
+        pool = [i.name for i in self.multiworld.itempool]
+        self.assertEqual(pool.count(STORM_BELL), STORM_BELL_LEVELS + 1)
 
 
 class TestSunbringerIsTheGoal(WildfrostTestBase):

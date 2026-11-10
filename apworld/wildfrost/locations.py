@@ -28,6 +28,13 @@ CHALLENGE_REGION = {
     "Challenge Charm 25": "Area 3",  # Win with Snowdwellers
     "Challenge Charm 26": "Area 3",  # Win with Shademancers
     "Challenge Charm 27": "Area 3",  # Win with Clunkmasters
+    # New Challenges (the user's calls, 2026-11-08): where the run's kit is first needed. Area 3 ones
+    # take the Final Boss kit (rules.challenge_kit), Area 2 ones the second boss's (rules.AREA_2_KITS).
+    "ap:shade_sculptor": "Area 2",
+    "ap:muncher": "Area 3",
+    "ap:full_price_crown": "Area 3",
+    "ap:bling_boss": "Area 3",
+    "ap:charms_on_card": "Area 2",
 }
 
 # The goal is a winning run per clan (what counts as winning depends on the goal option). Each is
@@ -51,13 +58,28 @@ def region_for(key: str, info: dict) -> str:
 
 
 def included(world: WildfrostWorld, info: dict) -> bool:
-    """The True Final Boss checks only exist when the goal sends the player there."""
-    return not info.get("true_final") or world.options.goal != world.options.goal.option_final_boss
+    """
+    With New Challenges, the challenges made for Archipelago replace the charm challenges' second checks.
+    The True Final Boss checks only exist when the goal sends the player there. Sunbringer (beat it)
+    went with them on 2026-11-08 (the user's call), when the Final Boss goal's bells became filler that
+    logic can't count; seeds from before (goal_sized_bells false) keep it, filler only.
+    """
+    new_challenges = bool(world.options.new_challenges)
+    if info.get("ap"):
+        return new_challenges
+    if new_challenges and info.get("second") and info.get("internal", "").startswith("Challenge Charm "):
+        return False
+    if world.options.goal != world.options.goal.option_final_boss:
+        return True
+    if info.get("internal") == SUNBRINGER and world.goal_sized_bells:
+        return False
+    return not info.get("true_final")
 
 
 # Filler only (decided by the user 2026-11-02): Gnomebringer (win a run with the Naked Gnome) is too
 # much luck to hold anything needed.
-EXCLUDED_CHALLENGES = {"Challenge Charm 17"}
+# Reach a boss holding 200+ Bling, too: players may sink a run for it (the user's call, 2026-11-08).
+EXCLUDED_CHALLENGES = {"Challenge Charm 17", "ap:bling_boss"}
 SUNBRINGER = "Challenge Charm 16"
 
 

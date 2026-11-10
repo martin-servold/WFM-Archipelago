@@ -6,7 +6,7 @@ namespace WildfrostArchipelago
     /// <summary>
     /// A local speed-up for the game's animations (playtest feedback 2026-11-01; a client setting in
     /// config.cfg). F6 steps through the speeds. Only on the AP profile, like every other patch, and only
-    /// when the seed's game_speed_up option allows it (off by default; the user's call, 2026-11-02).
+    /// when the seed's game_speed_up option allows it (off by default from 2026-11-02, on from 2026-11-08; the user's calls).
     /// The game changes Time.timeScale itself: everything that goes through Events.InvokeTimeScaleChange
     /// (the miniboss death slow motion, the gamespeed console command) lands in TimeScaleSystem, which
     /// is scaled here, and the pause menu sets 0 on open and a flat 1 on close, which is put back.

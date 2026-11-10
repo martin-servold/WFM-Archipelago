@@ -45,8 +45,40 @@ PACK_SIZE = 3
 CLAN_OF_POOL = {"General": "General", "Snow": "General", "Basic": "Basic", "Magic": "Magic", "Clunk": "Clunk"}
 CLAN_LABEL = {"General": "General", "Basic": "Snowdweller", "Magic": "Shademancer", "Clunk": "Clunkmaster"}
 
+# Challenges that aren't in the game (designed with the user 2026-11-08): with the New Challenges option
+# they take the place of the charm challenges' second checks. Keyed "challenge:ap:<slug>"; the client
+# detects each by its slug, and rules.py holds what each needs. Named by what they ask, like vanilla's
+# non-charm challenges, so players know what to do. Append new ones at the end: the order sets the IDs.
+AP_CHALLENGES = [
+    ("charm_merchant", "Buy 2 upgraded cards from the Charm Merchant"),
+    ("shade_sculptor", "Copy 2 Clunkers at the Shade Sculptor"),
+    ("muncher", "Feed 3 Munchers in one run"),
+    ("gnome_traveller", "Take all 3 items from the Gnome Traveller"),
+    ("cursed_crowns", "Apply 3 Cursed Crowns"),
+    ("injure", "Injure 3 companions"),
+    ("curse_charmed", "Take 2 curse-charmed cards"),
+    ("gobblers", "Kill 3 Gobblers"),
+    ("gunk_boss", "Use a Gunk Fruit on a boss"),
+    ("full_price_crown", "Buy a Crown for 100 or more Bling"),
+    ("bling_boss", "Reach a boss holding 200 or more Bling"),
+    ("junk", "Recycle 20 Junk"),
+    ("haze", "Apply 3 Haze"),
+    ("ink", "Apply 40 Ink"),
+    ("icgm", "Fire the I.C.G.M"),
+    ("overburn", "Kill 10 enemies with Overburn explosions"),
+    ("egg", "Don't break the Egg"),
+    ("soulbound", "Kill 3 enemies with Soulbound Skulls"),
+    ("sheepopper", "Explode a Sheepopper"),
+    ("skull_muffin", "Use a Skull Muffin"),
+    ("bom", "Apply 40 Bom"),
+    ("spice", "Stack 20 Spice on a single unit"),
+    ("stormbear", "Use Stormbear Spirit"),
+    ("moko_totem", "Fire the Moko Totem"),
+    ("charms_on_card", "Put 4 or more charms on one card"),
+]
+
 # ID ranges. Locations and items have separate ID spaces.
-LOC_BATTLE, LOC_CHALLENGE, LOC_SECOND = 1000, 2000, 3000
+LOC_BATTLE, LOC_CHALLENGE, LOC_SECOND, LOC_AP_CHALLENGE = 1000, 2000, 3000, 4000
 ITEM_TRIBE, ITEM_EVENT, ITEM_PET, ITEM_BELL, ITEM_PACK, ITEM_FILLER = 100, 200, 300, 400, 3000, 9000
 ITEM_TRAP, ITEM_BOON = 9100, 9200
 # Charms are items one by one, not in packs (decided by the user 2026-11-02): a charm pack brought
@@ -159,6 +191,7 @@ def main():
     challenge_ids = assign([c[0] for c in challenges], old_loc, LOC_CHALLENGE)
     seconds = [b[0] for b in battles if b[3]] + [c[0] for c in challenges if doubled_challenge(c[2])]
     second_ids = assign([k + "#2" for k in seconds], old_loc, LOC_SECOND)
+    ap_ids = assign([f"challenge:ap:{slug}" for slug, _ in AP_CHALLENGES], old_loc, LOC_AP_CHALLENGE)
 
     tribe_keys = [f"tribe:{t}" for t in RUN_TRIBES]
     event_keys = [f"event:{e}" for e in EVENT_NODES]
@@ -192,6 +225,8 @@ def main():
     locations += [(k, n, challenge_ids[k], {"internal": i, "text": d}) for k, n, i, d in challenges]
     locations += [(k + "#2", n + " #2", second_ids[k + "#2"], {**info, "second": True})
                   for k, n, _, info in list(locations) if k in seconds]
+    locations += [(f"challenge:ap:{slug}", f"Challenge - {text}", ap_ids[f"challenge:ap:{slug}"],
+                   {"internal": f"ap:{slug}", "text": text, "ap": True}) for slug, text in AP_CHALLENGES]
     items = [(k, RUN_TRIBES[k.split(":")[1]], item_ids[k], {"kind": "Tribe"}) for k in tribe_keys]
     items += [(k, EVENT_NODES[k.split(":")[1]], item_ids[k], {"kind": "Event"}) for k in event_keys]
     items += [(k, f"{titles.get(k[4:], k[4:])} Pet", item_ids[k], {"kind": "Pet"}) for k in pet_keys]

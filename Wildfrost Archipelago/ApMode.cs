@@ -61,6 +61,7 @@ namespace WildfrostArchipelago
         private static HashSet<string> seedItems = new HashSet<string>();
         private static bool leaderReroll;
         private static bool noPossessedFinalBoss;
+        private static bool newChallenges;
         // Snowdwellers are an item too in seeds with the starting_tribe option.
         private static bool snowdwellersIsItem;
 
@@ -111,6 +112,7 @@ namespace WildfrostArchipelago
             seedItems = new HashSet<string>(client.ItemKeyValues);
             leaderReroll = client.LeaderReroll;
             noPossessedFinalBoss = client.NoPossessedFinalBoss;
+            newChallenges = client.NewChallenges;
             snowdwellersIsItem = client.SnowdwellersIsItem;
             cardKinds = client.CardKinds ?? new Dictionary<string, string>();
             packs = client.Packs ?? new Dictionary<string, List<string>>();
@@ -372,6 +374,9 @@ namespace WildfrostArchipelago
         /// <summary>Whether the Final Boss keeps its default deck (disable_possessed_final_boss).</summary>
         public static bool NoPossessedFinalBoss => noPossessedFinalBoss;
 
+        /// <summary>Whether the challenges made for Archipelago are checks this seed (new_challenges; NewChallenges.cs).</summary>
+        public static bool NewChallenges => newChallenges;
+
         // --- Reverse Storm Bells (slot_data progression_direction 1; designed with the user 2026-11-05) ---
         // Runs start Overcranked, and each Progressive Storm Bell lowers the floor a step: Overcranked,
         // 10, 9, 8, 7, 6, 5, then no bells (even-step seeds: Overcranked, 20, 18, ... 2, then no bells).
@@ -544,6 +549,7 @@ namespace WildfrostArchipelago
             {
                 client.SendLocation("challenge:" + name, quiet: true);
             }
+            WildfrostArchipelago.NewChallenges.CatchUp(client);
         }
 
         // --- Queries used by ApPatches. Only called while Active. ---

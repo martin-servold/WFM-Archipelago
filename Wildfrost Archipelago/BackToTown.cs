@@ -11,7 +11,7 @@ namespace WildfrostArchipelago
     /// A "Back To Town" line on the pause menu during an AP run (decided by the user 2026-11-05): the
     /// same as Back To Menu, run saved and all, but it lands in town. Vanilla's Back To Menu is
     /// Sequences.EndCampaign("MainMenu"), and the end screen already ends into "Town" the same way.
-    /// The button is a copy of Back To Menu, shown under it, and hidden outside a run (the scenes
+    /// The button is a copy of Back To Menu, shown above it, and hidden outside a run (the scenes
     /// where vanilla turns Quick Restart off) and off AP.
     /// </summary>
     internal static class BackToTown
@@ -53,7 +53,7 @@ namespace WildfrostArchipelago
         {
             var copy = UnityEngine.Object.Instantiate(line.gameObject, line.parent);
             copy.name = Name;
-            copy.transform.SetSiblingIndex(line.GetSiblingIndex() + 1);
+            copy.transform.SetSiblingIndex(line.GetSiblingIndex()); // above Back To Menu: the lines go in order of how far they back out (the user, 2026-11-08)
             // The label is localized; without this it would switch back to "Back To Menu".
             foreach (var c in copy.GetComponentsInChildren<Component>(true).Where(c => c != null && c.GetType().Name.Contains("Locali")).ToList())
                 UnityEngine.Object.DestroyImmediate(c);

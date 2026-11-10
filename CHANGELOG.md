@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 (2026-11-10)
+
+Install the new `wildfrost.apworld` to make seeds with these changes. Seeds made with 0.3.0 still work with this version of the mod, with their old bells, both charm challenge checks and no New Challenges.
+
+- **Storm bells fit the goal:** a forward True Final Boss seed only has the 5 Progressive Storm Bells it needs, plus Extra Storm Bells, instead of all 11, so the 5th no longer turns up early. Its storm point limit stops at 10 (plus 2 for each extra), and Force Storm Bells Up To goes no higher than that. Overcranked and Reverse seeds keep all 11.
+- **Final Boss goal:** its bells are filler (they only make runs harder), and Sunbringer is left out with the True Final Boss battles.
+- **New Challenges** (new option, on by default): 25 challenges made for Archipelago take the place of the second checks of the charm challenges, so there's more to do for about as many checks (one fewer). The map events and the Binku pet become progression, and a Final Boss goal seed keeps one storm bell as progression for the challenges that ring one. Off keeps the second checks. They're listed on the town's Challenges board after vanilla's, and the end-of-run progress panel shows the ones the run moved.
+- The town's Challenges board shows vanilla's hidden challenges instead of "Locked" on Archipelago seeds, since each is a check.
+- **Fix:** the storm bell that curses card rewards never showed its cursed cards. Like the cursed crowns in 0.3.0, rolling reward nodes and shops when you enter them threw away the negative charms the map gave their cards. A re-rolled node now gets as many cursed cards again, placed by the game's own rules (the curses can differ from the ones the map rolled); a curse never takes a node's last clean card (so a node showing one card is never cursed; the Charm Merchant, with its one card among plain charms, can be), and any a node can't take go to another reward node of the same map tier, as the game spreads them.
+- **Fix:** shop prices from storm bells (crowns going up with each one bought, and the bell that raises shop prices) were lost when a shop rolled on entry, so crowns always cost 75. A re-rolled shop now gets the bells' prices again.
+- **Fix:** the Checks tab listed checks that aren't in the seed (such as the True Final Boss checks in a Final Boss seed) as in logic. It now lists only the seed's own.
+- **Back To Town** is above Back To Menu in the pause menu, so the lines go in order of how far they take you back.
+- **Game Speed Up** is on by default. The game still starts at normal speed; F6 speeds it up.
+- **Archipelago 0.6.7** can generate seeds (0.6.8 before).
+- **Goal with Reverse:** the Goal option now says it's ignored with Progression Direction: Reverse, whose goal is always the True Final Boss on a run with no bells (as before).
+
 ## 0.3.0 (2026-11-07)
 
 Install the new `wildfrost.apworld` to make seeds with the new options. Seeds made with 0.2.x still work with this version of the mod, with their old settings, and yamls written for 0.2.x still generate. Their `force_storm_bells` and `force_overcrank` lines are ignored with a warning, so they get Force Storm Bells Up To's default of 10: set `force_storm_bells_up_to` instead (0 for off).

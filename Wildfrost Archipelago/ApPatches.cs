@@ -425,6 +425,151 @@ namespace WildfrostArchipelago
             }
         }
 
+        /// <summary>
+        /// The scripts of the storm bells rung this run (Campaign.Data.Modifiers' setup and start scripts).
+        /// Some change the map's shops and reward nodes once it's made, which drawing on entry undoes:
+        /// ScriptAdjustShopPrices and ScriptChangeShopPrices set a shop's crown, charm and item prices
+        /// (crowns going up with each one bought; found by the user 2026-11-08, crowns stayed 75), so a
+        /// re-rolled node gets them run again on it alone.
+        /// </summary>
+        internal static class BellScripts
+        {
+            public static IEnumerable<T> Active<T>() where T : Script =>
+                Campaign.Data?.Modifiers?.Where(m => m != null).OrderBy(m => m.scriptPriority)
+                    .SelectMany(m => (m.setupScripts ?? new Script[0]).Concat(m.startScripts ?? new Script[0])).OfType<T>()
+                ?? Enumerable.Empty<T>();
+
+            /// <summary>Runs this run's scripts of a type on one node: they go over Campaign.nodes, so that list holds only it meanwhile.</summary>
+            public static void RunOn<T>(CampaignNode node) where T : Script
+            {
+                var campaign = References.Campaign;
+                if (campaign?.nodes == null || node == null) return;
+                foreach (var script in Active<T>().ToList())
+                {
+                    var nodes = campaign.nodes;
+                    campaign.nodes = new List<CampaignNode> { node };
+                    try
+                    {
+                        Drain(script.Run());
+                        ArchipelagoMod.Client?.LogDebug($"Ran the storm bell's {typeof(T).Name} on the re-rolled {Describe(node.type?.name)} node");
+                    }
+                    catch (System.Exception e)
+                    {
+                        ArchipelagoMod.Client?.LogDebug($"{typeof(T).Name} on the re-rolled node failed: {e.Message}");
+                    }
+                    finally
+                    {
+                        campaign.nodes = nodes;
+                    }
+                }
+            }
+
+            private static void Drain(IEnumerator routine)
+            {
+                while (routine != null && routine.MoveNext())
+                    if (routine.Current is IEnumerator inner) Drain(inner);
+            }
+        }
+
+        /// <summary>
+        /// The storm bell that curses card rewards (ScriptDowngradeCardRewards) puts negative charms on
+        /// cards in the nodes' saved data once the map is made: "upgrades&lt;i&gt;" for an item or companion
+        /// node's i-th card, ShopRoutine.Data.upgrades for a shop, UpgradedCard.upgradeNames for the Charm
+        /// Merchant. Drawing on entry rolls the node again and lost them (found by the user 2026-11-08,
+        /// as with the cursed crowns). The re-rolled node gets as many again, placed by the bell's own
+        /// script (TryAddDowngrade with its PopulatePool, the vanilla rules for which charm goes on which
+        /// card), so which curses they are can change (the user's call). Any the node can't take go to
+        /// another undrawn reward node of the same map tier, as vanilla spreads them over a tier; that
+        /// node keeps them through its own re-roll. A curse never takes a node's last clean card.
+        /// </summary>
+        internal static class CurseCharms
+        {
+            private static bool IsCurse(string name)
+            {
+                var upgrade = string.IsNullOrEmpty(name) ? null : AddressableLoader.Get<CardUpgradeData>("CardUpgradeData", name);
+                return upgrade != null && upgrade.type == CardUpgradeData.Type.Charm && upgrade.tier < 0;
+            }
+
+            private static IEnumerable<string> Names(object value) =>
+                value is SaveCollection<string> list ? list.collection ?? new string[0] : value as string[] ?? new string[0];
+
+            /// <summary>How many negative charms are on this node's cards.</summary>
+            public static int In(CampaignNode node)
+            {
+                int count = 0;
+                if (node?.data == null) return count;
+                foreach (var pair in node.data)
+                {
+                    if (pair.Key.StartsWith("upgrades")) count += Names(pair.Value).Count(IsCurse);
+                    else if (pair.Value is ShopRoutine.Data shop && shop.upgrades != null)
+                        count += shop.upgrades.Where(u => u != null).SelectMany(u => u).Count(IsCurse);
+                    else if (pair.Value is EventRoutineCharmShop.Data charmShop && charmShop.cards != null)
+                        count += charmShop.cards.Where(c => c?.upgradeNames != null).SelectMany(c => c.upgradeNames).Count(IsCurse);
+                }
+                return count;
+            }
+
+            /// <summary>A node's cards (a shop's items) and how many of them have a negative charm.</summary>
+            private static (int cards, int cursed) Tally(CampaignNode node)
+            {
+                if (node.data.TryGetValue("shopData", out object shopValue) && shopValue is ShopRoutine.Data shop && shop.items != null)
+                {
+                    var items = Enumerable.Range(0, shop.items.Count).Where(i => shop.items[i].category == "Items").ToList();
+                    return (items.Count, items.Count(i => shop.upgrades != null && i < shop.upgrades.Count && (shop.upgrades[i] ?? new string[0]).Any(IsCurse)));
+                }
+                if (node.data.TryGetValue("data", out object charmValue) && charmValue is EventRoutineCharmShop.Data charmShop && charmShop.cards != null)
+                    return (charmShop.cards.Count, charmShop.cards.Count(c => (c?.upgradeNames ?? new string[0]).Any(IsCurse)));
+                int cards = node.data.TryGetValue("cards", out object list) ? Names(list).Count() : 0;
+                return (cards, Enumerable.Range(0, cards).Count(i => node.data.TryGetValue($"upgrades{i}", out object u) && Names(u).Any(IsCurse)));
+            }
+
+            // A curse only goes where a clean card is left to pick (the user's call, 2026-11-08): a node
+            // showing one card never gets one, as cursing every choice felt unfair. The Charm Merchant is
+            // left to vanilla: it holds one card, and its plain charms are there to pick as well.
+            private static bool Fair(CampaignNode node)
+            {
+                if (node.data.TryGetValue("data", out object charmValue) && charmValue is EventRoutineCharmShop.Data) return true;
+                var (cards, cursed) = Tally(node);
+                return cursed + 1 < cards;
+            }
+
+            private static readonly System.Reflection.MethodInfo TryAdd = AccessTools.Method(typeof(ScriptDowngradeCardRewards), "TryAddDowngrade",
+                new[] { typeof(CampaignNode), typeof(List<CardUpgradeData>) });
+            private static readonly System.Reflection.MethodInfo Pool = AccessTools.Method(typeof(ScriptDowngradeCardRewards), "PopulatePool");
+
+            public static void PutBack(CampaignNode node, int count)
+            {
+                if (count <= 0 || node?.data == null) return;
+                var script = BellScripts.Active<ScriptDowngradeCardRewards>().FirstOrDefault();
+                if (script == null || TryAdd == null || Pool == null)
+                {
+                    ArchipelagoMod.Client?.LogDebug($"The re-rolled node had {count} cursed cards, but the curse script wasn't found to place them again");
+                    return;
+                }
+                var pool = (List<CardUpgradeData>)Pool.Invoke(script, null);
+                bool Place(CampaignNode at) => Fair(at) && (bool)TryAdd.Invoke(script, new object[] { at, pool });
+                int placed = 0;
+                while (placed < count && Place(node)) placed++;
+                if (placed > 0) ArchipelagoMod.Client?.LogDebug($"Cursed {placed} cards in the re-rolled node, as the map had");
+                if (placed == count) return;
+                // Vanilla spreads curses over a map tier's reward nodes: the rest go to the tier's undrawn ones.
+                var others = References.Campaign?.nodes?.Where(n => n != null && n != node && !n.cleared && n.data != null
+                    && n.areaIndex == node.areaIndex && n.tier == node.tier
+                    && n.data.ContainsKey(RolledKey) && !n.data.ContainsKey(DrawnKey)).OrderBy(_ => UnityEngine.Random.value).ToList()
+                    ?? new List<CampaignNode>();
+                foreach (var other in others)
+                {
+                    while (placed < count && Place(other))
+                    {
+                        placed++;
+                        ArchipelagoMod.Client?.LogDebug($"A curse the re-rolled node couldn't take went to a {Describe(other.type?.name)} node of the same tier");
+                    }
+                    if (placed == count) return;
+                }
+                ArchipelagoMod.Client?.LogDebug($"{count - placed} curses found no card to go on in this tier");
+            }
+        }
+
         private static CampaignNodeType FindNodeType(string name) =>
             AddressableLoader.GetGroup<CampaignNodeType>("CampaignNodeType").FirstOrDefault(t => t.name == name);
 
@@ -475,6 +620,7 @@ namespace WildfrostArchipelago
                 var was = node.data.TryGetValue(WasKey, out object name) ? FindNodeType(name as string) : null;
                 var secrets = SecretCards.In(node);
                 string crown = ShopCrown(node);
+                int curses = CurseCharms.In(node);
                 // SetUp replaces node.data; clearing it first keeps old keys from leaking into one that adds.
                 node.data.Clear();
                 if (was != null) SwapType(node, was);
@@ -497,6 +643,10 @@ namespace WildfrostArchipelago
                 }
                 yield return setUp;
                 KeepShopCrown(node, crown);
+                // The storm bells' shop prices (the cursed crowns and curses are kept above and below).
+                BellScripts.RunOn<ScriptAdjustShopPrices>(node);
+                BellScripts.RunOn<ScriptChangeShopPrices>(node);
+                CurseCharms.PutBack(node, curses);
                 foreach (string card in secrets) SecretCards.PutBack(node, card, "Kept {0} in the re-rolled node");
                 SecretCards.Repair(node);
                 yield return AnnounceBling(node, enter);
@@ -989,7 +1139,7 @@ namespace WildfrostArchipelago
         {
             private static void Postfix(ChallengeProgressDisplay __instance)
             {
-                if (ApMode.Active && __instance.text != null) __instance.text.text = "Archipelago check sent";
+                if (ApMode.Active && __instance.text != null) __instance.text.text = NewChallenges.RewardText;
             }
         }
 
@@ -1028,7 +1178,15 @@ namespace WildfrostArchipelago
                         .Where(p => p.currentValue > p.originalValue).ToList() ?? new List<ChallengeProgress>();
                     foreach (var progress in moved)
                     {
-                        yield return AddDisplay(sequence, progress);
+                        var challenge = AddressableLoader.Get<ChallengeData>("ChallengeData", progress.challengeName);
+                        if (challenge == null) continue;
+                        yield return AddDisplay(sequence, challenge, progress.originalValue, progress.currentValue);
+                        yield return new UnityEngine.WaitForSeconds(Gap);
+                    }
+                    // The New Challenges this run moved come after vanilla's (NewChallenges.TakeRunProgress).
+                    foreach (var (challenge, from, to) in NewChallenges.TakeRunProgress())
+                    {
+                        yield return AddDisplay(sequence, challenge, from, to);
                         yield return new UnityEngine.WaitForSeconds(Gap);
                     }
                 }
@@ -1038,20 +1196,18 @@ namespace WildfrostArchipelago
                 }
             }
 
-            private static IEnumerator AddDisplay(ChallengeProgressSequence sequence, ChallengeProgress progress)
+            private static IEnumerator AddDisplay(ChallengeProgressSequence sequence, ChallengeData challenge, int from, int to)
             {
-                var challenge = AddressableLoader.Get<ChallengeData>("ChallengeData", progress.challengeName);
-                if (challenge == null) yield break;
                 var panel = UnityEngine.Object.Instantiate(Prefab(sequence), Group(sequence));
                 Panels(sequence).Insert(0, panel);
                 UpdatePanelPositions.Invoke(sequence, null);
                 panel.Assign(challenge);
-                panel.SetFill(progress.originalValue, challenge.goal);
+                panel.SetFill(from, challenge.goal);
 
-                int fillTo = System.Math.Min(challenge.goal, progress.currentValue);
-                Events.InvokeProgressStart(UnityEngine.Mathf.Clamp01((float)progress.originalValue / challenge.goal));
+                int fillTo = System.Math.Min(challenge.goal, to);
+                Events.InvokeProgressStart(UnityEngine.Mathf.Clamp01((float)from / challenge.goal));
                 panel.animator.SetBool("Increasing", true);
-                LeanTween.value(panel.gameObject, progress.originalValue, fillTo, FillTime).setEaseOutQuad()
+                LeanTween.value(panel.gameObject, from, fillTo, FillTime).setEaseOutQuad()
                     .setOnUpdate((float value) =>
                     {
                         panel.SetFill(value, challenge.goal);

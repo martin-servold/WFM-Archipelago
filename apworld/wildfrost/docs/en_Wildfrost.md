@@ -21,6 +21,9 @@ Win with your clans (Snowdwellers, Shademancers and Clunkmasters). The **Goal** 
 - **True Final Boss:** beat the True Final Boss, which needs 10 storm points of storm bells (the default).
 - **Overcranked True Final Boss:** beat the True Final Boss on an Overcranked run (every bell on).
 
+With **Progression Direction: Reverse**, the Goal option is ignored: runs start Overcranked, and the goal is always the
+True Final Boss on a run with no bells.
+
 **Goal Clans Required** (1 to 3, default 1) sets how many clans need such a win. The default finishes the seed with one
 win against the True Final Boss.
 
@@ -30,11 +33,40 @@ The run that completes the last clan finishes the seed.
 
 - **Battles:** winning each distinct battle in each area with each tribe, for example "Area 2 Battle - The Demonhorn
   Goats (Shademancers)". The battles you meet change from run to run, so finding them all takes several runs.
-- **Bosses:** defeating each area's possible bosses. Each boss gives two checks ("... #2"), and so does every challenge
-  that unlocks a charm in the base game (Sunbringer, beating the True Final Boss, among them).
+- **Bosses:** defeating each area's possible bosses. Each boss gives two checks ("... #2"). With **New Challenges** off,
+  so does every challenge that unlocks a charm in the base game (Sunbringer, beating the True Final Boss, among them; a
+  Final Boss goal seed leaves it out, with the True Final Boss battles).
 - **Challenges:** completing any of the game's challenges. Gnomebringer only ever holds filler (it's too much luck),
-  and so does Sunbringer when your goal is a plain win or a single True Final Boss win. They are all active from the start rather than unlocking in
+  and so does Sunbringer when your goal is a single True Final Boss win. They are all active from the start rather than unlocking in
   a chain.
+- **New Challenges** (on by default): 25 challenges made for Archipelago, in place of the charm challenges' second
+  checks. "Total" ones count across runs; the others in a single run, battle or moment.
+  - Buy 2 upgraded cards from the Charm Merchant
+  - Copy 2 Clunkers at the Shade Sculptor
+  - Feed 3 Munchers in one run
+  - Take all 3 items from the Gnome Traveller
+  - Apply 3 Cursed Crowns
+  - Injure 3 companions
+  - Take 2 curse-charmed cards
+  - Kill 3 Gobblers
+  - Use a Gunk Fruit on a boss
+  - Buy a Crown for 100 or more Bling
+  - Reach a boss holding 200 or more Bling
+  - Recycle 20 Junk
+  - Apply 3 Haze
+  - Apply 40 Ink
+  - Fire the I.C.G.M
+  - Kill 10 enemies with Overburn explosions
+  - Don't break the Egg
+  - Kill 3 enemies with Soulbound Skulls
+  - Explode a Sheepopper
+  - Use a Skull Muffin
+  - Apply 40 Bom
+  - Stack 20 Spice on a single unit
+  - Use Stormbear Spirit
+  - Fire the Moko Totem
+  - Put 4 or more charms on one card
+  Reaching a boss with 200+ Bling only ever holds filler, since a run may be sunk for it.
 
 Logic expects no cards for the first five fights of a run (two battles, the first boss, two more battles). From the
 second boss on, a clan is expected to have at least one companion pack and either one item pack or six charms. Only
@@ -77,10 +109,13 @@ map events the miner unlocks in vanilla (the Charm Merchant, Shade Sculptor and 
 
 Storm bells no longer unlock by winning. Each Progressive Storm Bell raises the storm point limit by 2: 2, 4, 6 and so on
 up to 20 (10, the fifth bell, is enough for the True Final Boss), and the eleventh unlocks Overcrank. Vanilla stops at 10;
-this mod lets you ring past it. The **Extra Storm Bells**
-option (1 by default) adds spare copies so the ones you need turn up sooner. **Force Storm Bells Up To**
+this mod lets you ring past it. How many bells a seed has depends on the goal: a True Final Boss goal only has the five
+it needs, so its limit stops at 10; an Overcranked goal or Reverse has all eleven; and a Final Boss goal has all eleven
+as filler, since its win needs none. The **Extra Storm Bells**
+option (1 by default) adds spare copies so the ones you need turn up sooner (with a True Final Boss goal, each also
+raises the limit by 2). **Force Storm Bells Up To**
 (10 by default) holds runs to your bells: a run won't start until the bells you've rung add up to your current storm
-point limit or that number, whichever is lower. At 22, once you have the eleventh bell, a run also won't start until the
+point limit or that number, whichever is lower (with a True Final Boss goal, no higher than its bells reach). At 22, once you have the eleventh bell, a run also won't start until the
 Overcrank lever is pulled. 0 turns it off. It only forces the bells your packs can carry: a run's tribe needs the packs for a win at that strength (counting
 General packs and the tribe's own), plus one more from 4 storm points and two more from 14, so a seed that hands out bells
 early doesn't make the first fights unwinnable.
@@ -104,7 +139,8 @@ hold back the ones on the possessed boss.
 
 ## Can the game run faster?
 
-With **Game Speed Up** on (it's off by default), F6 speeds the game up to 1.5x or 2x while you play this slot.
+With **Game Speed Up** on (the default), F6 speeds the game up to 1.5x or 2x while you play this slot. The game starts at
+normal speed, so you only get faster play when you press F6.
 
 ## What does DeathLink do?
 

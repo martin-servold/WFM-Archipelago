@@ -66,6 +66,7 @@ namespace WildfrostArchipelago
             overlayHost.AddComponent<ApUi>();
 
             LocationHooks.Enable();
+            NewChallenges.Enable();
 
             if (debug)
             {
@@ -88,6 +89,7 @@ namespace WildfrostArchipelago
         protected override void Unload()
         {
             LocationHooks.Disable();
+            NewChallenges.Disable();
             ApMode.Exit();
             GameSpeed.Reset();
             HookSurvey.Disable();

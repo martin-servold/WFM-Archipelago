@@ -1,4 +1,5 @@
 [h1]Wildfrost Archipelago[/h1]
+Current Version 0.4.0
 Connects Wildfrost to an [url=https://archipelago.gg]Archipelago[/url] multiworld randomizer. Your unlocks (cards, companions, charms, pets, tribes, storm bells and the miner's events) are shuffled into a multiworld with other games. Winning battles, beating bosses and completing challenges sends items to other players, and theirs send items to you.
 
 Your normal save is never touched: each seed plays on a save profile of its own.
@@ -10,7 +11,7 @@ Your normal save is never touched: each seed plays on a save profile of its own.
 [h2]What you need[/h2]
 [list]
 [*]Wildfrost, started in its Modded mode, with this mod enabled on the Mods screen
-[*][url=https://github.com/ArchipelagoMW/Archipelago/releases]Archipelago[/url] 0.6.8 or newer, to generate a seed
+[*][url=https://github.com/ArchipelagoMW/Archipelago/releases]Archipelago[/url] 0.6.7 or newer, to generate a seed
 [/list]
 
 [h2]1. Install the APWorld[/h2]

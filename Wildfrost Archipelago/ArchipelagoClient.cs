@@ -179,6 +179,7 @@ namespace WildfrostArchipelago
         private volatile List<BellKit> bellKits;
         private volatile Dictionary<string, JToken> locationRules;
         private volatile Dictionary<string, string> locationNames;
+        private volatile HashSet<string> seedLocations; // the location keys in this seed, from the server at login
         private volatile Dictionary<string, string> itemNames;
         private volatile int forceStormPoints;
         private volatile bool forceOvercrank;
@@ -187,6 +188,7 @@ namespace WildfrostArchipelago
         private volatile bool gameSpeedUp;
         private volatile bool leaderReroll;
         private volatile bool noPossessedFinalBoss;
+        private volatile bool newChallenges;
         private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
         private volatile bool deathLinkOn;
@@ -292,8 +294,13 @@ namespace WildfrostArchipelago
         /// <summary>Every item's display name by key ("pack:General:Item:3" is "General Item Pack 3"), looked up at login.</summary>
         public Dictionary<string, string> ItemNames => itemNames;
 
-        /// <summary>Every location key, in location ID order (the apworld numbers them by area).</summary>
-        public IEnumerable<string> LocationKeys => locationIds?.OrderBy(p => p.Value).Select(p => p.Key) ?? Enumerable.Empty<string>();
+        /// <summary>Every location key in this seed, in location ID order (the apworld numbers them by area).</summary>
+        /// slot_data's location_ids lists every key the apworld knows, so this keeps the ones in this seed
+        /// (the server's location list): a seed leaves some out (the charm challenges' "#2" with New
+        /// Challenges, True Final Boss checks in Final Boss seeds), and those have no rule, so the Checks
+        /// tab showed them as in logic (found by the user 2026-11-08).
+        public IEnumerable<string> LocationKeys => locationIds?.Where(p => seedLocations == null || seedLocations.Contains(p.Key))
+            .OrderBy(p => p.Value).Select(p => p.Key) ?? Enumerable.Empty<string>();
 
         public class BellKit
         {
@@ -330,6 +337,8 @@ namespace WildfrostArchipelago
 
         /// <summary>slot_data "disable_possessed_final_boss": the Final Boss keeps its default deck (off in older seeds).</summary>
         public bool NoPossessedFinalBoss => noPossessedFinalBoss;
+        /// <summary>slot_data "new_challenges": the challenges made for Archipelago are checks (off in older seeds).</summary>
+        public bool NewChallenges => newChallenges;
 
         /// <summary>slot_data "death_link_damage_percent": a received death's hit on the leader, % of max health (100 in older seeds).</summary>
         public int DeathLinkDamagePercent => deathLinkDamagePercent;
@@ -423,6 +432,8 @@ namespace WildfrostArchipelago
                             newSession.Socket.DisconnectAsync();
                             return;
                         }
+                        var inSeed = new HashSet<long>(newSession.Locations.AllLocations);
+                        seedLocations = new HashSet<string>(locationIds.Where(p => inSeed.Contains(p.Value)).Select(p => p.Key));
                         locationNames = locationIds.ToDictionary(p => p.Key,
                             p => newSession.Locations.GetLocationNameFromId(p.Value, ConnectionConfig.Game) ?? p.Key);
                         itemNames = itemKeys.GroupBy(p => p.Value).ToDictionary(g => g.Key,
@@ -566,6 +577,7 @@ namespace WildfrostArchipelago
             gameSpeedUp = slotData.TryGetValue("game_speed_up", out object speedUp) && Convert.ToBoolean(speedUp);
             leaderReroll = slotData.TryGetValue("leader_reroll", out object reroll) && Convert.ToBoolean(reroll);
             noPossessedFinalBoss = slotData.TryGetValue("disable_possessed_final_boss", out object possessed) && Convert.ToBoolean(possessed);
+            newChallenges = slotData.TryGetValue("new_challenges", out object challenges) && Convert.ToBoolean(challenges);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);
             deathLinkDamagePercent = slotData.TryGetValue("death_link_damage_percent", out object damage) ? Convert.ToInt32(damage) : 100;
@@ -686,6 +698,9 @@ namespace WildfrostArchipelago
             bool done;
             try
             {
+                // location_ids lists every key the apworld knows; a seed may leave some out (the charm
+                // challenges' "#2" with New Challenges, True Final Boss checks in Final Boss seeds).
+                if (!current.Locations.AllLocations.Contains(id)) return;
                 done = current.Locations.AllLocationsChecked.Contains(id);
             }
             catch (InvalidOperationException)

@@ -12,7 +12,7 @@ Your normal save is never touched: each seed plays on a save profile of its own.
 ## What you need
 
 - Wildfrost, started in its Modded mode, with this mod subscribed in steam workshop and enabled on the Mods screen
-- [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.8 or newer, to generate a seed
+- [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.7 or newer, to generate a seed
 
 ## Playing
 
@@ -59,14 +59,19 @@ Archipelago** plays your normal save instead.
 - **Progression Direction:** Forward (the default): each Progressive Storm Bell raises the storm point limit by 2.
   Reverse: runs start Overcranked, each bell lowers the bells a run must start with, and the goal is the True Final
   Boss, which only comes on a run with no bells.
-- **Goal:** Final Boss, True Final Boss (the default) or Overcranked True Final Boss
+- **Goal:** Final Boss, True Final Boss (the default) or Overcranked True Final Boss. A True Final Boss seed has only
+  the 5 Progressive Storm Bells it needs (10 storm points); the others have all 11, as filler with a Final Boss goal.
+  Ignored with Progression Direction: Reverse, whose goal is always the True Final Boss
 - **Goal Clans Required:** how many clans (1 to 3) need that win, each with a run of its own, to finish the seed
-- **Extra Storm Bells:** spare Progressive Storm Bells, so the ones you need turn up sooner
+- **Extra Storm Bells:** spare Progressive Storm Bells, so the ones you need turn up sooner (with a True Final Boss
+  goal, each raises the storm point limit by 2)
 - **Force Storm Bells Up To** (10 by default): runs must start with as many storm points as you've unlocked, up to
   this number, as far as the tribe's packs carry it. 22 also makes every run Overcranked once Overcrank is unlocked;
   0 turns it off.
 - **Trap Percentage:** how much filler is traps instead of Bling and boons
-- **Game Speed Up:** lets F6 speed the game up (1.5x or 2x)
+- **New Challenges** (on by default): 25 challenges made for Archipelago (fire the I.C.G.M, apply 40 Ink, ...) take the
+  place of the charm challenges' second checks
+- **Game Speed Up** (on by default): lets F6 speed the game up (1.5x or 2x); the game starts at normal speed
 - **Leader Reroll:** a button (or R) on the leader select screen rerolls the leaders, as often as you like
 - **Disable Possessed Final Boss** (off by default): the Final Boss always fights with its own deck, not your last
   winning deck
