@@ -288,6 +288,28 @@ namespace WildfrostArchipelago
         /// <summary>slot_data "location_rules": what each location needs (rules.rule_json); none in older seeds.</summary>
         public Dictionary<string, JToken> LocationRules => locationRules;
 
+        /// <summary>
+        /// The rules come as one JSON string from 0.4.1 on: Archipelago 0.6.8's Python clients (Universal
+        /// Tracker) drop any message nested over 16 deep, and the rules nest up to 15 (found 2026-11-13).
+        /// Older seeds send them as an object.
+        /// </summary>
+        private static Dictionary<string, JToken> ReadLocationRules(object value)
+        {
+            JObject rules = value as JObject;
+            if (rules == null && (value as string ?? (value as JValue)?.Value as string) is string text)
+            {
+                try
+                {
+                    rules = JObject.Parse(text);
+                }
+                catch (Newtonsoft.Json.JsonException)
+                {
+                    rules = null; // unreadable: no rules, so every open check shows as in logic
+                }
+            }
+            return rules?.Properties().ToDictionary(p => p.Name, p => p.Value) ?? new Dictionary<string, JToken>();
+        }
+
         /// <summary>Every location's display name by key, looked up at login.</summary>
         public Dictionary<string, string> LocationNames => locationNames;
 
@@ -557,9 +579,7 @@ namespace WildfrostArchipelago
                     Alternatives = k[1].ToObject<List<Dictionary<string, int>>>(),
                 }).ToList()
                 : null;
-            locationRules = slotData.TryGetValue("location_rules", out object rules) && rules is JObject ruleObject
-                ? ruleObject.Properties().ToDictionary(p => p.Name, p => p.Value)
-                : new Dictionary<string, JToken>();
+            locationRules = ReadLocationRules(slotData.TryGetValue("location_rules", out object rules) ? rules : null);
             if (slotData.TryGetValue("force_storm_bells_up_to", out object upTo))
             {
                 int points = Convert.ToInt32(upTo);

@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from BaseClasses import ItemClassification, LocationProgressType
@@ -114,7 +115,7 @@ class TestGoalWinEachClan(WildfrostTestBase):
         names = {loc.name for loc in self.multiworld.get_locations(self.player)}
         self.assertNotIn("Challenge - Sunbringer", names)
         self.assertNotIn("Challenge - Sunbringer #2", names)
-        self.assertNotIn("challenge:Challenge Charm 16", self.world.fill_slot_data()["location_rules"])
+        self.assertNotIn("challenge:Challenge Charm 16", json.loads(self.world.fill_slot_data()["location_rules"]))
 
     def test_bell_levels_in_slot_data(self) -> None:
         # The client steps by 2 storm points with 11 levels, and keeps the old 7 steps without the key.
@@ -542,6 +543,22 @@ class TestCardChallenges(WildfrostTestBase):
         self.collect_by_name(charms("General", 1))
         self.assertTrue(self.can_reach_location(location))
 
+    def test_high_roller_needs_four_charms(self) -> None:
+        # Buy 3 charms in one shop: 4 charms of one clan's pool (the user's call, 2026-11-13).
+        for location in ("Challenge - High Roller", "Challenge - High Roller #2"):
+            with self.subTest(location=location):
+                self.collect_by_name(charms("General", 3))
+                self.assertFalse(self.can_reach_location(location))
+                self.collect_by_name(charms("Basic", 1))
+                self.assertTrue(self.can_reach_location(location))
+                self.remove_by_name(charms("General", 3) + charms("Basic", 1))
+                # Shademancer charms count only with the Shademancers.
+                self.collect_by_name(charms("General", 3) + charms("Magic", 1))
+                self.assertFalse(self.can_reach_location(location))
+                self.collect_by_name(["Shademancers"])
+                self.assertTrue(self.can_reach_location(location))
+                self.remove_by_name(["Shademancers"] + charms("General", 3) + charms("Magic", 1))
+
     def test_demonized_with_loki_or_cards(self) -> None:
         location = "Challenge - Kill 3 Demonized enemies"
         self.assertFalse(self.can_reach_location(location))
@@ -788,7 +805,7 @@ class TestLocationRulesForClient(BellTestBase):
     options = {**WildfrostTestBase.options, "goal": "true_final_boss", "force_storm_bells_up_to": 10}
 
     def check_matches(self) -> None:
-        rules = self.world.fill_slot_data()["location_rules"]
+        rules = json.loads(self.world.fill_slot_data()["location_rules"])
         key_of = {name: key for key, name, _, _ in ITEMS}
         state = self.multiworld.state
         have = {key_of[name]: count for name, count in state.prog_items[self.player].items() if name in key_of}
@@ -832,7 +849,7 @@ class TestSecondChecks(BellTestBase):
         seconds = [name for _, name, _, info in LOCATIONS if info.get("second")]
         # Every boss (18) and every challenge that unlocks a charm in vanilla (26).
         self.assertEqual(len(seconds), 44)
-        rules = self.world.fill_slot_data()["location_rules"]
+        rules = json.loads(self.world.fill_slot_data()["location_rules"])
         key_of = {name: key for key, name, _, _ in LOCATIONS}
         for name in seconds:
             first = name.removesuffix(" #2")
@@ -977,3 +994,25 @@ class TestReverseStormBells(BellTestBase):
         for name in TRUE_FINAL + ["Victory (Snowdwellers)"]:
             with self.subTest(location=name):
                 self.assertTrue(self.can_reach_location(name))
+
+
+class TestSlotDataDepth(WildfrostTestBase):
+    """
+    Archipelago 0.6.8's Python clients (Universal Tracker, the Text Client) drop any message nested over
+    16 deep (NetUtils._check_depth), so a Connected packet with this slot_data must pass it. Overcranked
+    with forcing at 22 gives the deepest kits; New Challenges the deepest challenge rules.
+    """
+    options = {**WildfrostTestBase.options, "goal": "overcranked_true_final_boss", "force_storm_bells_up_to": 22,
+               "extra_storm_bells": 4, "new_challenges": True}
+
+    def test_connected_packet_passes_the_depth_limit(self) -> None:
+        from NetUtils import _check_depth, encode
+        slot_data = self.world.fill_slot_data()
+        packet = encode([{"cmd": "Connected", "team": 0, "slot": self.player, "players": [], "missing_locations": [],
+                          "checked_locations": [], "slot_data": slot_data, "slot_info": {}, "hint_points": 0}])
+        _check_depth(packet)  # raises ValueError("JSON document too complex")
+        self.assertTrue(json.loads(slot_data["location_rules"]))
+
+
+class TestSlotDataDepthReverse(TestSlotDataDepth):
+    options = {**WildfrostTestBase.options, "progression_direction": "reverse", "new_challenges": True}

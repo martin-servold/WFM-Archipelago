@@ -283,6 +283,8 @@ def challenge_kit(info: dict, extra: int, reversed_bells: bool = False):
         return any_clan(lambda clan: packs(clan, 0, 2 + extra, 0))
     if info["internal"] == "Challenge Companion 1":  # Equip 10 Charms: a single charm (decided by the user 2026-11-02)
         return any_clan(lambda clan: packs(clan, 0, 0, 1))
+    if info["internal"] == "Challenge Charm 10":  # High Roller, buy 3 charms in one shop: 4 charms (the user's call, 2026-11-13)
+        return any_clan(lambda clan: packs(clan, 0, 0, 4))
     # The Area 3 challenges need a won run (or the Final Boss); the "win with tribe X" ones with that tribe.
     if CHALLENGE_REGION.get(info["internal"]) != "Area 3":
         return None

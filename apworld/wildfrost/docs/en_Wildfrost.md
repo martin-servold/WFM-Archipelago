@@ -89,7 +89,7 @@ with Monch or Devicro, or Chompom with a Shell card. Minimalist expects Toaster 
 and Long Live the King expect a companion pack and an item pack, and Achieve a 6x Kill Combo two companion
 packs and an item pack or three charms. Hoarder (12 cards in hand) expects the Clunkmasters, whose leaders can trash, and one of: Lupa, the Pinch or Gear
 Charm, the Sneezle pet, Lumin Ring with Folby, something that gives the leader Frenzy (Blaze Bom, Moko Charm or Blaze
-Tea), the Punchfist Charm, or Bom Barrel with the Cake or Frenzy Charm. Equip 10 Charms expects one charm that one of your tribes can use, and Buy 5 discounted items two item packs (three
+Tea), the Punchfist Charm, or Bom Barrel with the Cake or Frenzy Charm. Equip 10 Charms expects one charm that one of your tribes can use, High Roller four charms one tribe can use, and Buy 5 discounted items two item packs (three
 with Force Storm Bells Up To on, four at 22).
 
 You start with one tribe, chosen by the **Starting Tribe** option (random by default); the other two are items, and

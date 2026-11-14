@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -141,5 +142,8 @@ class WildfrostWorld(World):
             # Which bells Force Storm Bells Up To forces, by the run clan's packs.
             "bell_kits": rules.bell_kits(),
             # For the client's tracker: what each location needs, in item keys (rules.rule_json).
-            "location_rules": self.location_rules,
+            # Sent as one JSON string: Archipelago 0.6.8's Python clients (Universal Tracker, the Text
+            # Client) drop any message nested over 16 deep (NetUtils._check_depth, AP PR #6378), and
+            # the rules nest up to 15 inside slot_data. A string counts as no depth (found 2026-11-13).
+            "location_rules": json.dumps(self.location_rules, separators=(",", ":")),
         }

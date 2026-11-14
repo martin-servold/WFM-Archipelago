@@ -1,5 +1,5 @@
 [h1]Wildfrost Archipelago[/h1]
-Current Version 0.4.0
+Current Version 0.4.1
 Connects Wildfrost to an [url=https://archipelago.gg]Archipelago[/url] multiworld randomizer. Your unlocks (cards, companions, charms, pets, tribes, storm bells and the miner's events) are shuffled into a multiworld with other games. Winning battles, beating bosses and completing challenges sends items to other players, and theirs send items to you.
 
 Your normal save is never touched: each seed plays on a save profile of its own.
@@ -45,17 +45,18 @@ The mod remembers these. The popup opens on every Play: [b]Continue[/b] carries 
 [h2]Options[/h2]
 [list]
 [*][b]Starting Tribe:[/b] Snowdwellers, Shademancers, Clunkmasters or random. The other two are items.
-[*][b]Progression Direction:[/b] Forward (the default): each of the 11 Progressive Storm Bells raises the storm point limit by 2, and the last unlocks Overcrank. Reverse: runs start Overcranked, each bell lowers the bells a run must start with, and the goal is the True Final Boss, which only comes on a run with no bells.
+[*][b]Progression Direction:[/b] Forward (the default): Each of the 11 Progressive Storm Bells raises the storm point limit by 2, and the last unlocks Overcrank. Reverse: runs start Overcranked, each bell lowers the bells a run must start with, and the goal is the True Final Boss, which only comes on a run with no bells.
 [*][b]Goal:[/b] Final Boss, True Final Boss (the default) or Overcranked True Final Boss
-[*][b]Goal Clans Required:[/b] how many clans (1 to 3) need that win, each with a run of its own. The default is one.
-[*][b]Extra Storm Bells:[/b] spare Progressive Storm Bells, so the ones you need turn up sooner
-[*][b]Force Storm Bells Up To[/b] (10 by default): runs must start with as many storm points as you've unlocked, up to this number, as far as the tribe's packs carry it. 22 also forces Overcrank; 0 turns it off.
-[*][b]Trap Percentage:[/b] how much filler is traps instead of Bling and boons
-[*][b]Game Speed Up:[/b] lets F6 speed the game up (1.5x or 2x)
-[*][b]Leader Reroll:[/b] a button (or R) on the leader select screen rerolls the leaders, as often as you like
-[*][b]Disable Possessed Final Boss[/b] (off by default): the Final Boss always fights with its own deck, not your last winning deck
-[*][b]DeathLink:[/b] losing a run kills the other DeathLink players
-[*][b]Death Link Damage Percent[/b] (100 by default): how hard a received death hits your leader, as a share of its max health, in the next battle. If it survives, a Gunk Fruit joins your deck for the run. 100 makes it flee, ending the run.
+[*][b]Goal Clans Required:[/b] How many clans (1 to 3) need that win, each with a run of its own. The default is one.
+[*][b]Extra Storm Bells:[/b] Spare Progressive Storm Bells, so the ones you need turn up sooner
+[*][b]Force Storm Bells Up To[/b] (10 by default): Runs must start with as many storm points as you've unlocked, up to this number, as far as the tribe's packs carry it. 22 also forces Overcrank; 0 turns it off.
+[*][b]Trap Percentage:[/b] How much filler is traps instead of Bling and boons
+[*][b]Game Speed Up:[/b] Lets F6 speed the game up (1.5x or 2x)
+[*][b]Leader Reroll:[/b] A button (or R) on the leader select screen rerolls the leaders, as often as you like
+[*][b]New Challenges:[/b] Adds extra challenges on top of the base game challenges to improve diversity of game play (IE. use Storm-Bear Spirit).
+[*][b]Disable Possessed Final Boss[/b] (off by default): The Final Boss always fights with its own deck, not your last winning deck
+[*][b]DeathLink:[/b] Losing a run kills the other DeathLink players
+[*][b]Death Link Damage Percent[/b] (100 by default): How hard a received death hits your leader, as a share of its max health, in the next battle. If it survives, a Gunk Fruit joins your deck for the run. 100 makes it flee, ending the run.
 
 [/list]
 

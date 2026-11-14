@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 (2026-11-13)
+
+Install the new `wildfrost.apworld` and update the mod together: seeds made with this apworld need this version of the mod for the Checks tab (an older mod shows every open check as in logic). Seeds made before keep working with this mod.
+
+- **Fix:** Universal Tracker and the Text Client on Archipelago 0.6.8 couldn't connect to a Wildfrost slot ("JSON document too complex"). Archipelago 0.6.8 drops messages nested more than 16 levels deep, and the Checks tab's logic rules went deeper. The apworld now sends them as one string. Seeds made before still can't use those clients on 0.6.8.
+- **Logic:** High Roller (buy 3 charms from a single shop) expects 4 charms that one of your tribes can use.
+- **Checks tab:** the checks in logic are listed alphabetically, as Universal Tracker lists them.
+
 ## 0.4.0 (2026-11-10)
 
 Install the new `wildfrost.apworld` to make seeds with these changes. Seeds made with 0.3.0 still work with this version of the mod, with their old bells, both charm challenge checks and no New Challenges.
