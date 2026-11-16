@@ -61,6 +61,7 @@ namespace WildfrostArchipelago
         private static HashSet<string> seedItems = new HashSet<string>();
         private static bool leaderReroll;
         private static bool noPossessedFinalBoss;
+        private static int trueFinalPoints = 10;
         private static bool newChallenges;
         // Snowdwellers are an item too in seeds with the starting_tribe option.
         private static bool snowdwellersIsItem;
@@ -112,6 +113,7 @@ namespace WildfrostArchipelago
             seedItems = new HashSet<string>(client.ItemKeyValues);
             leaderReroll = client.LeaderReroll;
             noPossessedFinalBoss = client.NoPossessedFinalBoss;
+            trueFinalPoints = client.TrueFinalPoints;
             newChallenges = client.NewChallenges;
             snowdwellersIsItem = client.SnowdwellersIsItem;
             cardKinds = client.CardKinds ?? new Dictionary<string, string>();
@@ -373,6 +375,10 @@ namespace WildfrostArchipelago
 
         /// <summary>Whether the Final Boss keeps its default deck (disable_possessed_final_boss).</summary>
         public static bool NoPossessedFinalBoss => noPossessedFinalBoss;
+
+        /// <summary>The True Final Boss's storm point threshold this seed (vanilla 10; lower when its mod extensions
+        /// leave too few storm bells to reach 10, the user's call 2026-11-15).</summary>
+        public static int TrueFinalPoints => trueFinalPoints;
 
         /// <summary>Whether the challenges made for Archipelago are checks this seed (new_challenges; NewChallenges.cs).</summary>
         public static bool NewChallenges => newChallenges;

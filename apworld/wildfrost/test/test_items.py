@@ -3,7 +3,7 @@ import unittest
 
 from BaseClasses import ItemClassification, LocationProgressType
 
-from ..data import CARDS, ITEMS, LOCATIONS, PACK_SIZE
+from ..data import CARDS, ITEMS, LOCATIONS
 from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, storm_bells_in_pool
 from ..items import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED
 from ..locations import CLANS, SUNBRINGER, included
@@ -11,8 +11,14 @@ from ..rules import required_tribes
 from ..world import progression_direction
 from . import WildfrostTestBase
 
+# The tools (gen_data.py, make_extension.py) write one pack row per 3 cards; generation just deals a
+# group's cards evenly across its packs.
+PACK_SIZE = 3
 
-LOCATION_NAMES = {name for _, name, _, _ in LOCATIONS}
+
+# Spare "#2" checks are only in seeds short of room (locations.spare_checks), never in these tests.
+LOCATIONS = [row for row in LOCATIONS if not row[3].get("spare")]
+LOCATION_NAMES = {name for _, name, _, info in LOCATIONS}
 
 
 def with_seconds(names: list[str]) -> list[str]:
@@ -59,7 +65,8 @@ class TestDefaultPool(WildfrostTestBase):
             if item == "Snowdwellers":
                 continue  # the starting tribe here; TestStartingTribe covers it
             gated = [name for key, name, _, info in LOCATIONS
-                     if tribe in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")]
+                     if tribe in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")
+                     and not info.get("spare")]
             gated.append(f"Victory ({item})")
             if item == "Clunkmasters":
                 # Toaster and the Gunk Bugs fight are both Clunkmaster.
@@ -617,9 +624,12 @@ class TestStartingTribe(WildfrostTestBase):
 
     def test_snowdwellers_gated(self) -> None:
         gated = [name for key, name, _, info in LOCATIONS
-                 if "Basic" in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")]
-        # ...and the challenges whose cards are all Snowdweller cards.
-        gated += ["Victory (Snowdwellers)"] + with_seconds(["Challenge - Tough Nut", "Challenge - Toxic", "Challenge - Bigger Hitter"])
+                 if "Basic" in required_tribes(key, info) and not info.get("true_final") and not info.get("ap")
+                 and not info.get("spare")]
+        # ...and the challenges whose cards are all Snowdweller cards, or whose effect only Snowdweller cards
+        # and leaders apply (Shroom, Shell: ["applies", ...]).
+        gated += ["Victory (Snowdwellers)"] + with_seconds(["Challenge - Tough Nut", "Challenge - Toxic", "Challenge - Bigger Hitter",
+                                                            "Challenge - Kill 15 enemies with Shroom", "Challenge - Apply 60 Shell"])
         self.assertIn("Challenge - One Punch", gated)
         self.assertIn("Challenge - Block 10 hits with Clunkers", gated)
         self.assertAccessDependency(gated, [["Snowdwellers"]])
@@ -660,7 +670,7 @@ class TestDefaults(WildfrostTestBase):
         self.assertTrue(slot_data["new_challenges"])  # on by default (the user's call, 2026-11-08)
 
 
-AP_CHALLENGES = [name for key, name, _, info in LOCATIONS if info.get("ap")]
+AP_CHALLENGES = [name for key, name, _, info in LOCATIONS if info.get("ap") and not info.get("spare")]
 CHARM_SECONDS = [name for key, name, _, info in LOCATIONS
                  if info.get("second") and info.get("internal", "").startswith("Challenge Charm ")]
 
@@ -846,8 +856,8 @@ class TestSecondChecks(BellTestBase):
     options = {**WildfrostTestBase.options, "goal": "true_final_boss"}
 
     def test_seconds_share_their_first_rule(self) -> None:
-        seconds = [name for _, name, _, info in LOCATIONS if info.get("second")]
-        # Every boss (18) and every challenge that unlocks a charm in vanilla (26).
+        seconds = [name for _, name, _, info in LOCATIONS if info.get("second") and not info.get("spare")]
+        # Every boss (18) and every challenge that unlocks a charm in vanilla (26); spares aren't in the seed.
         self.assertEqual(len(seconds), 44)
         rules = json.loads(self.world.fill_slot_data()["location_rules"])
         key_of = {name: key for key, name, _, _ in LOCATIONS}
@@ -1016,3 +1026,41 @@ class TestSlotDataDepth(WildfrostTestBase):
 
 class TestSlotDataDepthReverse(TestSlotDataDepth):
     options = {**WildfrostTestBase.options, "progression_direction": "reverse", "new_challenges": True}
+
+
+class TestRuleChanges20261116(WildfrostTestBase):
+    """The user's rule changes of 2026-11-16 (base.wildfrost.json)."""
+    options = {**WildfrostTestBase.options, "goal": "final_boss"}
+
+    def test_rampage_one_frenzy_card_and_a_winnable_run(self) -> None:
+        # A reusable Frenzy source isn't enough alone: the fight still has to be won (Area 3, the Final
+        # Boss kit; the user's call, 2026-11-16).
+        location = "Challenge - Rampage"
+        self.collect_by_name([TestCardChallenges.pack_name(self, "TinyTyko")])
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name([pack("General", "Companion", 1), pack("General", "Item", 1)])
+        self.assertTrue(self.can_reach_location(location))
+
+    def test_icemaster_open_from_the_start(self) -> None:
+        # Every clan has leaders that apply Block (["applies", "Block"]).
+        self.assertTrue(self.can_reach_location("Challenge - Icemaster"))
+
+    def test_feed_the_beast_needs_a_consume_card(self) -> None:
+        location = "Challenge - Feed the Beast"
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name([TestCardChallenges.pack_name(self, "BlazeTea")])  # Blaze Tea: Consume
+        self.assertTrue(self.can_reach_location(location))
+
+    def test_area_4_takes_the_true_final_boss_packs(self) -> None:
+        # Undefeated and Charmless: the True Final Boss kit's packs (2 companion packs, 2 item packs, 3
+        # charms of one clan), no bells, so they stay possible in a Final Boss goal seed.
+        names = {loc.name for loc in self.multiworld.get_locations(self.player)}
+        for location in ("Challenge - Undefeated", "Challenge - Charmless"):
+            with self.subTest(location=location):
+                self.assertIn(location, names)
+                self.collect_by_name([pack("General", "Companion", 1), pack("General", "Item", 1)])
+                self.assertFalse(self.can_reach_location(location))  # the Final Boss kit isn't enough
+                self.collect_by_name([pack("General", "Companion", 2), pack("General", "Item", 2)] + charms("General", 3))
+                self.assertTrue(self.can_reach_location(location))
+                self.remove_by_name([pack("General", "Companion", n) for n in (1, 2)]
+                                    + [pack("General", "Item", n) for n in (1, 2)] + charms("General", 3))

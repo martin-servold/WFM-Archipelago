@@ -1,50 +1,46 @@
 from __future__ import annotations
 
+import json
 from itertools import combinations
 from typing import TYPE_CHECKING
 
-from rule_builder.rules import And, Has, HasAll, HasFromList, Or
+from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
 
-from .data import CARDS, ITEMS, LOCATIONS
+from .content import CARDS, ITEMS, LOCATIONS
+from .data import LEADERS
+from .groups import GROUPS
 from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS
-from .locations import CHALLENGE_REGION, CLANS, SUNBRINGER, VICTORY_ITEM, included, victory_location
+from .locations import CLANS, SUNBRINGER, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
 
 # "Win a run with tribe X" needs that tribe.
-CHALLENGE_TRIBE = {
-    "Challenge Charm 25": "Basic",
-    "Challenge Charm 26": "Magic",
-    "Challenge Charm 27": "Clunk",
-}
-# Challenges done with a tribe's own cards (decided by the user 2026-10-31): Ritual's sacrifice
-# cards and Summon 50 allies are Shademancer play, Add 10 Scrap a Clunkmaster run, and Block 10
-# hits with Clunkers uses Woodhead from the Snowdweller starting deck. Kill 15 with Shroom and Apply
-# 60 Shell use the Snowdweller leaders, who come with Shroom or Shell (decided by the user 2026-11-04).
-CHALLENGE_NEEDS_TRIBE = {
-    "Challenge Event 2": "Basic",
-    "Challenge Item 5": "Basic",
-    "Challenge Item 4": "Basic",
-    "Challenge Charm 8": "Basic",  # One Punch: the Scrappy Sword is a Snowdweller starting card
-    "Challenge Charm 6": "Magic",
-    "Challenge Companion 5": "Magic",
-    "Challenge Companion 6": "Clunk",
-    # New Challenges (the user's calls, 2026-11-08).
-    "ap:junk": "Clunk",
-    "ap:haze": "Clunk",
-    "ap:overburn": "Magic",
-}
-# ...and that clan's cards. One Punch is the Frost Guardian with a Scrappy Sword, a Snowdweller
-# starting card, so it needs a Snowdweller win.
-WIN_WITH_CLAN = {**CHALLENGE_TRIBE, "Challenge Charm 8": "Basic"}
+def rule_tribes(rule) -> set[str]:
+    """
+    The tribes a challenge's rule needs outright: a top-level ["tribe", X], or ["clan_kit", {"clan": X}],
+    alone or within an "and". For Reverse's stretch and for tests; the rule itself checks them.
+    """
+    if not rule:
+        return set()
+    if rule[0] == "tribe":
+        return {rule[1]}
+    if rule[0] == "clan_kit" and rule[1].get("clan"):
+        return {rule[1]["clan"]}
+    if rule[0] == "and":
+        return set().union(*(rule_tribes(child) for child in rule[1]))
+    return set()
+
+
+def challenge_region(info: dict) -> str:
+    """Where a challenge can first be completed: an extension's names its own."""
+    return info.get("region", "Area 1")
 
 
 def required_tribes(key: str, info: dict) -> set[str]:
     """Tribe items a location needs."""
     if not key.startswith("battle:"):
-        tribe = CHALLENGE_TRIBE.get(info["internal"]) or CHALLENGE_NEEDS_TRIBE.get(info["internal"])
-        return {tribe} if tribe else set()
+        return rule_tribes(info.get("rule"))
     # A battle check is won while playing run_tribe. Some battles also only appear once a tribe is
     # unlocked: vanilla locks them behind the tribe challenges (BattleLockData), and the client
     # re-links each lock to the tribe item.
@@ -127,8 +123,14 @@ def final_boss_kit(clan: str, extra: int = 0):
     return kit_packs(clan, FINAL_BOSS_PACKS, extra)
 
 
-def true_final_kit(clan: str, extra: int = 0):
-    return And(kit_packs(clan, TRUE_FINAL_PACKS, extra), Has(STORM_BELL, TRUE_FINAL_BELLS))
+# Vanilla's True Final Boss threshold (StormBellManager.TrueFinalBossPointThreshold).
+TRUE_FINAL_POINTS = 10
+
+
+def true_final_kit(clan: str, extra: int = 0, bells: int = TRUE_FINAL_BELLS):
+    """bells: the Progressive Storm Bells that reach the True Final Boss (world.true_final_bells: fewer
+    when an extension removes so many storm bells that 10 storm points can't be reached)."""
+    return And(kit_packs(clan, TRUE_FINAL_PACKS, extra), Has(STORM_BELL, bells))
 
 
 def overcrank_kit(clan: str, extra: int = 0):
@@ -219,9 +221,9 @@ def both(*rules):
     return None if not rules else rules[0] if len(rules) == 1 else And(*rules)
 
 
-def battle_kit(info: dict, extra: int):
+def battle_kit(info: dict, extra: int, tf_bells: int = TRUE_FINAL_BELLS):
     if info.get("true_final"):
-        return true_final_kit(info["run_tribe"], extra)
+        return true_final_kit(info["run_tribe"], extra, tf_bells)
     return final_boss_kit(info["run_tribe"], extra) if info["tier"] > NO_CARDS_UP_TO_TIER else None
 
 
@@ -230,12 +232,12 @@ def any_clan(kit):
     return Or(*(both(tribe_rule({clan}), kit(clan)) for clan in CLANS))
 
 
-def battle_rule(key: str, info: dict, extra: int, reversed_bells: bool = False):
+def battle_rule(key: str, info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS):
     if reversed_bells:
         clan = info["run_tribe"]
         kit = reverse_true_final_kit(clan) if info.get("true_final") else reverse_kit(clan, reverse_stretch(info["area"], info["tier"]))
         return both(tribe_rule(required_tribes(key, info)), kit)
-    return both(tribe_rule(required_tribes(key, info)), battle_kit(info, extra))
+    return both(tribe_rule(required_tribes(key, info)), battle_kit(info, extra, tf_bells))
 
 
 def companion_and_item_pack(clan: str):
@@ -243,7 +245,6 @@ def companion_and_item_pack(clan: str):
 
 
 # Challenges that need a companion pack and an item pack in the run's clan (decided by the user 2026-11-02).
-NEEDS_COMPANION_AND_ITEM = ("Challenge Charm 22", "Challenge Charm 12")  # Beastmaster, Long Live the King
 
 
 def two_companions_and_one_more(clan: str):
@@ -256,40 +257,39 @@ def card_packs(clan: str, count: int):
     return HasFromList(*(clan_packs(clan, "Companion") + clan_packs(clan, "Item")), count=count)
 
 
-# New Challenges that take the second boss's kit (the Final Boss kit's packs, from map tier 5 on).
-AREA_2_KITS = ("ap:shade_sculptor",)
 
 
-def challenge_kit(info: dict, extra: int, reversed_bells: bool = False):
+def uses_area_kit(info: dict) -> bool:
+    """Whether the rule takes its area's kit itself, for a set clan ("clan_kit" with "area_kit")."""
+    return '"area_kit": true' in json.dumps(info.get("rule"))
+
+
+def area_kit(region: str, clan: str, extra: int, tf_bells: int = TRUE_FINAL_BELLS, sunbringer: bool = False):
+    """
+    What a run of a clan needs to do a challenge in that region (the user's calls, 2026-11-16): Area 1
+    nothing; Area 2 the Final Boss kit, which Area 2's battles need (only when a rule asks, "area_kit");
+    Area 3 a won run, the Final Boss kit; Area 4 the True Final Boss kit's packs, and for Sunbringer, the
+    True Final Boss fight itself, its bells too.
+    """
+    if region in ("Area 2", "Area 3"):
+        return final_boss_kit(clan, extra)
+    if region == "Area 4":
+        return true_final_kit(clan, extra, tf_bells) if sunbringer else kit_packs(clan, TRUE_FINAL_PACKS, extra)
+    return None
+
+
+def challenge_kit(info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS):
+    """
+    A challenge's area kit, any clan: Area 3 and 4 always (area_kit), unless its rule takes it for a set
+    clan. Its own needs (cards, packs, tribes) are its rule (CardRules.extension_rule).
+    """
     if reversed_bells:
         return reverse_challenge_kit(info)
-    internal = info["internal"]
-    # New Challenges whose packs must be one clan's, with its kit (the user's calls, 2026-11-08).
-    if internal == "ap:charm_merchant":  # the merchant sells charmed cards: 4 card packs and 6 charms
-        return any_clan(lambda clan: And(card_packs(clan, 4), packs(clan, 0, 0, 6)))
-    if internal == "ap:charms_on_card":  # 4+ charms on a card: 6 charms, past the second boss
-        return any_clan(lambda clan: And(final_boss_kit(clan, extra), packs(clan, 0, 0, 6)))
-    if internal == "ap:curse_charmed":  # a companion or item pack to be offered cursed cards from
-        return any_clan(lambda clan: card_packs(clan, 1))
-    if internal in AREA_2_KITS:
-        return any_clan(lambda clan: final_boss_kit(clan, extra))
-    if info["internal"] == SUNBRINGER:  # the True Final Boss, with any clan
-        return any_clan(lambda clan: true_final_kit(clan, extra))
-    if info["internal"] in NEEDS_COMPANION_AND_ITEM:
-        return any_clan(companion_and_item_pack)
-    if info["internal"] == "Challenge Pet 5":  # 6x Kill Combo (decided by the user 2026-11-02)
-        return any_clan(two_companions_and_one_more)
-    if info["internal"] == "Challenge Pet 3":  # Buy 5 discounted items (decided by the user 2026-11-02)
-        return any_clan(lambda clan: packs(clan, 0, 2 + extra, 0))
-    if info["internal"] == "Challenge Companion 1":  # Equip 10 Charms: a single charm (decided by the user 2026-11-02)
-        return any_clan(lambda clan: packs(clan, 0, 0, 1))
-    if info["internal"] == "Challenge Charm 10":  # High Roller, buy 3 charms in one shop: 4 charms (the user's call, 2026-11-13)
-        return any_clan(lambda clan: packs(clan, 0, 0, 4))
-    # The Area 3 challenges need a won run (or the Final Boss); the "win with tribe X" ones with that tribe.
-    if CHALLENGE_REGION.get(info["internal"]) != "Area 3":
+    region = challenge_region(info)
+    if region not in ("Area 3", "Area 4") or uses_area_kit(info):
         return None
-    clan = WIN_WITH_CLAN.get(info["internal"])
-    return final_boss_kit(clan, extra) if clan else any_clan(lambda clan: final_boss_kit(clan, extra))
+    sunbringer = info["internal"] == SUNBRINGER
+    return any_clan(lambda clan: area_kit(region, clan, extra, tf_bells, sunbringer))
 
 
 def reverse_challenge_kit(info: dict):
@@ -301,11 +301,12 @@ def reverse_challenge_kit(info: dict):
     if internal == SUNBRINGER:
         return any_clan(reverse_true_final_kit)
     base = challenge_kit(info, 0)
-    region = CHALLENGE_REGION.get(internal, "Area 1")
+    region = challenge_region(info)
     if region == "Area 1":
         return base
-    stretch = "Area 3" if region == "Area 3" else "Area 2"
-    clan = WIN_WITH_CLAN.get(internal) or CHALLENGE_NEEDS_TRIBE.get(internal)
+    stretch = "Area 3" if region in ("Area 3", "Area 4") else "Area 2"
+    tribes = sorted(rule_tribes(info.get("rule")))
+    clan = tribes[0] if len(tribes) == 1 else None
     reach = reverse_kit(clan, stretch) if clan else any_clan(lambda c: reverse_kit(c, stretch))
     return both(base, reach)
 
@@ -314,137 +315,217 @@ def reverse_challenge_kit(info: dict):
 # is in logic with the pack holding it this seed, and a run of its clan (the tribe item for
 # Shademancer and Clunkmaster cards). Clunkers are the pool cards of the game's Clunker type.
 CLAN_OF_CARD = {key.removeprefix("card:"): info["clan"] for key, _, info in CARDS}
-CLUNKERS = ("Bitebox", "Blingo", "Bonfire", "Heartforge", "HeartmistStation", "Joob", "Junkmuncher", "Krono",
-            "Madness", "MegaMimik", "Mimik", "MobileCampfire", "OhNo", "PepperFlag", "Peppermaton", "Plinker",
-            "PomDispenser", "Shroominator", "Shroomine", "ShroomLauncher", "Snowcracker", "SpiceSparklers",
-            "TotemOfTheGoat", "Vimifier", "Vox", "ZoomlinNest")
-SHELL_CARDS = ("Kernel", "Shelly", "ShellShield", "Shellbo")
-FRENZY_CARDS = ("Bumblebee", "TinyTyko", "Timmy")  # Blaze Bom, Tiny Tyko, Mini Mika
-BLOCK_CARDS = ("IceDice", "Blunky")
-SACRIFICE_CARDS = ("SnufferMask", "SnowMaul", "ZapOrb", "TailsFive", "TheBaker", "Boggler")  # Snuffer Mask, Yeti Skull, Azul Skull, Chikichi, The Baker, Groff
-TEETH_CARDS = ("SharkTooth", "TigrisMask", "Kokonut", "Tusk")  # Tiger Skull, Tigris Mask, Taiga, Tusk
-DEMONIZE_CARDS = ("CardUpgradeDemonize", "Demonheart", "Dimona", "TotemOfTheGoat")  # Goat Charm, Demonheart, Dimona, Totem of the Goat
-SHROOM_CARDS = ("Shroominator", "Fulbert", "Fungoose", "Wort", "HongosHammer", "SporePack", "ShroomLauncher")
-# New Challenges (the user's lists, 2026-11-08).
-SPICE_CARDS = ("PepperFlag", "Pyra", "SpiceStones", "Peppereaper", "Pimento", "DragonflamePepper")
-HAZE_CARDS = ("Voodoo", "HazeBlaze", "FoggyBrew")  # Hazeblazer, Haze Keg, Foggy Brew
-# The storm bells some New Challenges ring (cursed crowns, Gobblers, Gunk Fruit, ...) cost at most the
-# first Progressive Storm Bell's 2 points (the user's call, 2026-11-08). Reverse runs start with every bell.
-BELL_CHALLENGES = ("ap:cursed_crowns", "ap:injure", "ap:curse_charmed", "ap:gobblers", "ap:gunk_boss",
-                   "ap:full_price_crown")
+# The groups live in groups.py, where extensions can add to them (PLAN.md §10).
+CLUNKERS = GROUPS["clunkers"]
+SHELL_CARDS = GROUPS["shell"]
+FRENZY_CARDS = GROUPS["frenzy"]
+BLOCK_CARDS = GROUPS["block"]
+SACRIFICE_CARDS = GROUPS["sacrifice"]
+TEETH_CARDS = GROUPS["teeth"]
+DEMONIZE_CARDS = GROUPS["demonize"]
+SHROOM_CARDS = GROUPS["shroom"]
+SPICE_CARDS = GROUPS["spice"]
+HAZE_CARDS = GROUPS["haze"]
+# Each challenge's needs are its row's "rule" in base.wildfrost.json (PLAN.md §10, phase 2).
+
+
+class Impossible(Exception):
+    """A rule needs a card this seed doesn't have (an extension removed it, PLAN.md §10)."""
 
 
 class CardRules:
+    """
+    Card needs. A card is in logic with the pack holding it this seed; one that isn't in this seed (an
+    extension removed it, or it's from an extension the slot didn't pick) raises Impossible, and the
+    "any of" helpers drop such alternatives (either), raising only when none is left.
+    """
+
     def __init__(self, world: WildfrostWorld):
         pack_names = {key: name for key, name, _, _ in ITEMS}
+        self.world = world
         self.extra = forced_extra(world)
         self.reversed = reverse(world)
         self.pack_of = {card.removeprefix("card:"): pack_names[pack]
                         for pack, cards in world.pack_contents.items() for card in cards}
-        # A charm is its own item.
-        self.pack_of.update({info["card"].removeprefix("card:"): name for _, name, _, info in ITEMS if info["kind"] == "Charm"})
+        # A charm is its own item: those of this slot's game that no extension removes.
+        removed = getattr(world, "removed", {}).get("charms", set())
+        self.pack_of.update({info["card"].removeprefix("card:"): name for _, name, _, info in ITEMS
+                             if info["kind"] == "Charm" and world.uses(info)
+                             and info["card"].removeprefix("card:") not in removed})
+
+    @staticmethod
+    def either(*alternatives):
+        """Any of these (rules, or callables making one); impossible ones are dropped."""
+        rules = []
+        for alternative in alternatives:
+            try:
+                rules.append(alternative() if callable(alternative) and not isinstance(alternative, Rule) else alternative)
+            except Impossible:
+                pass
+        if not rules:
+            raise Impossible("no alternative left")
+        if any(rule is None for rule in rules):  # one alternative needs nothing
+            return None
+        return rules[0] if len(rules) == 1 else Or(*rules)
+
+    def bell(self, bell: str):
+        """
+        A run that can ring this storm bell: enough Progressive Storm Bells for its points (each raises
+        the limit by 2; Reverse runs start with every bell). Impossible if this seed lacks the bell.
+        """
+        points = self.world.bell_points.get(bell)
+        if points is None:
+            raise Impossible(bell)
+        return None if self.reversed else Has(STORM_BELL, max(1, -(-points // 2)))
 
     def card(self, card: str):
+        if card not in self.pack_of:
+            raise Impossible(card)
         return both(tribe_rule({CLAN_OF_CARD[card]}), Has(self.pack_of[card]))
 
+    def members(self, cards, clans=None) -> list:
+        """
+        A group's members this seed: its cards with a pack (removed ones and those from an extension this
+        slot didn't pick are skipped) and its tribes ("tribe:<clan>": a clan whose leaders do it).
+        """
+        return [c for c in cards if c.startswith("tribe:") and c[6:] in CLANS
+                or c in self.pack_of and (clans is None or CLAN_OF_CARD[c] in clans)]
+
+    def member(self, member: str):
+        return Has(CLANS[member[6:]]) if member.startswith("tribe:") else self.card(member)
+
     def any_of(self, cards, clans=None):
-        cards = [c for c in cards if clans is None or CLAN_OF_CARD[c] in clans]
-        return Or(*(self.card(c) for c in cards)) if len(cards) > 1 else self.card(cards[0])
+        members = self.members(cards, clans)
+        if not members:
+            raise Impossible("none of the cards")
+        return Or(*(self.member(c) for c in members)) if len(members) > 1 else self.member(members[0])
 
     def all_of(self, *cards):
         """Every one of these cards: their packs (one pack can hold several) and their clans."""
+        missing = [c for c in cards if c not in self.pack_of]
+        if missing:
+            raise Impossible(", ".join(missing))
         tribes = tribe_rule({CLAN_OF_CARD[c] for c in cards})
         packs = sorted({self.pack_of[c] for c in cards})
         return both(tribes, HasAll(*packs) if len(packs) > 1 else Has(packs[0]))
 
     def two_of(self, cards):
         """Two different cards: their packs (one pack can hold both) and their clans."""
-        return Or(*(self.all_of(a, b) for a, b in combinations(cards, 2)))
+        members = self.members(cards)
+        if len(members) < 2:
+            raise Impossible("fewer than two of the cards")
+
+        def pair(a: str, b: str):
+            tribes = [m for m in (a, b) if m.startswith("tribe:")]
+            rest = [m for m in (a, b) if not m.startswith("tribe:")]
+            return both(*(self.member(t) for t in tribes), self.all_of(*rest) if rest else None)
+        return Or(*(pair(a, b) for a, b in combinations(members, 2)))
 
     def with_any(self, card: str, partners):
         """A card together with any one of the partners."""
-        return Or(*(self.all_of(card, p) for p in partners))
+        return self.either(*(lambda p=p: self.all_of(card, p) for p in partners))
 
-    def big_hitter(self):
-        # 50 damage in one hit (decided by the user 2026-11-02): Pepper Flag with a spice source,
-        # Chikichi with Monch or Devicro, or Chompom with a shell source.
-        return Or(self.with_any("PepperFlag", ("Pyra", "SpiceStones", "Peppereaper")),
-                  self.with_any("TailsFive", ("Monch", "Reaper")),
-                  self.with_any("Chompom", SHELL_CARDS))
+    def extension_rule(self, rule, region: str = "Area 1"):
+        """A challenge's rule from its row (extensions.RULE_FORMS; ours or an extension's) as rule objects."""
+        form = rule[0]
+        if form == "or":  # alternatives this seed can't have are dropped; a battle's are each one of them
+            alternatives = []
+            for child in rule[1]:
+                if child[0] == "battle":
+                    alternatives += self.battle_alternatives(child[1])
+                else:
+                    alternatives.append(lambda child=child: self.extension_rule(child, region))
+            return self.either(*alternatives)
+        if form == "battle":
+            return self.either(*self.battle_alternatives(rule[1]))
+        if form == "and":
+            return both(*(self.extension_rule(child, region) for child in rule[1]))
+        if form == "has":
+            return Has(ITEM_NAME_BY_KEY[rule[1]], rule[2])
+        if form == "all":
+            return HasAll(*(ITEM_NAME_BY_KEY[k] for k in rule[1]))
+        if form == "any":
+            return HasFromList(*(ITEM_NAME_BY_KEY[k] for k in rule[1]), count=rule[2])
+        if form == "packs":
+            clan, kind, count = rule[1:]
+            pool = clan_packs(clan, "Companion") + clan_packs(clan, "Item") if kind == "" else clan_packs(clan, kind)
+            return HasFromList(*pool, count=count)
+        if form == "tribe":
+            return tribe_rule({rule[1]})
+        if form == "cards":  # these cards together
+            return self.all_of(*rule[1])
+        if form == "with":  # a card together with any one of a group's (or a list's) cards
+            partners = GROUPS[rule[2]] if isinstance(rule[2], str) else rule[2]
+            return self.with_any(rule[1], [p for p in partners if not p.startswith("tribe:")])
+        if form == "bell":
+            return self.bell(rule[1])
+        if form == "applies":
+            return self.applies(rule[1])
+        if form == "trait":
+            return self.applies(rule[1], "traits")
+        if form == "clan_kit":
+            return self.clan_kit(rule[1], region)
+        if form == "card":
+            return self.card(rule[1])
+        cards = GROUPS[rule[1]] if isinstance(rule[1], str) else rule[1]
+        if form == "any_card":  # an optional third entry keeps the cards of those clans
+            return self.any_of(cards, tuple(rule[2]) if len(rule) > 2 else None)
+        return self.two_of(cards)
 
-    def hoarder(self):
-        # 12 cards in hand (decided by the user 2026-11-02). Hand size is 6 and draw is capped by the
-        # deck, so this rests on trash (temporary cards): a Clunkmaster run, whose leaders can trash,
-        # with one of these. A looser bar than the true minimum, on purpose; Sneezle with Lupa outside
-        # Clunkmasters is left out, and so is the Lumin Vase (a 10-bell event, not a card). Lumin Ring
-        # with Sneezle or the Moko Charm is already covered by those alone.
-        return both(tribe_rule({"Clunk"}), Or(
-            self.card("LuminCat"),                                                    # Lupa
-            self.any_of(("CardUpgradeDraw", "CardUpgradeTrash")),                     # Pinch, Gear Charm
-            Has(SNEEZLE_PET),
-            self.all_of("CardUpgradeBoost", "Gearhead"),                              # Lumin Ring + Folby
-            self.any_of(("Bumblebee", "CardUpgradeFrenzyReduceAttack", "BlazeTea")),  # Frenzy for the leader: Blaze Bom, Moko Charm, Blaze Tea
-            self.card("CardUpgradePunchfist"),                                        # Punchfist Charm
-            self.with_any("Badoo", ("CardUpgradeCake", "CardUpgradeFrenzyConsume")),  # Bom Barrel + Cake or Frenzy Charm
-        ))
+    def applies(self, effect: str, field: str = "applies"):
+        """
+        A card this seed has that applies the effect (its "applies", from the content dump), or a clan whose
+        leaders apply it (the user's call, 2026-11-15: leaders count, e.g. only Clunkmaster leaders apply Bom).
+        With field "traits", a card or leader with that trait (keyword: Smackback, Consume, ...).
+        """
+        cards = [key[5:] for key, _, info in CARDS if effect in info.get(field, ())]
+        tribes = [f"tribe:{clan}" for clan, leaders in LEADERS.items()
+                  if clan in CLANS and any(effect in leader.get(field, ()) for leader in leaders)]
+        return self.any_of(tribes + cards)
 
-    def for_challenge(self, internal: str):
-        clunker = self.any_of(CLUNKERS)
-        rules = {
-            "Challenge Charm 5": self.any_of(SHELL_CARDS),                             # Tough Nut
-            "Challenge Charm 20": self.any_of(FRENZY_CARDS),                           # Rampage
-            "Challenge Charm 9": self.any_of(BLOCK_CARDS),                             # Icemaster
-            "Challenge Charm 6": self.two_of(SACRIFICE_CARDS),                         # Ritual
-            "Challenge Pet 4": Or(Has(SPIKE_PET), self.any_of(TEETH_CARDS)),           # Kill 10 with Teeth
-            # Kill 3 Demonized enemies (decided by the user 2026-11-02). Demonize leaders don't count:
-            # leaders aren't items, so a run can't be sure of one.
-            "Challenge Pet 2": Or(Has(LOKI_PET), self.any_of(DEMONIZE_CARDS)),
-            "Challenge Charm 7": self.two_of(SHROOM_CARDS),                            # Toxic
-            "Challenge Item 2": clunker,                                               # Add 3 Clunkers
-            # Block 10 hits with Clunkers needs only Snowdwellers (CHALLENGE_NEEDS_TRIBE): Woodhead starts in their deck.
-            # Add 10 Scrap to Clunkers: a Clunkmaster run (CHALLENGE_NEEDS_TRIBE) with a clunker it can draw.
-            "Challenge Companion 6": self.any_of(CLUNKERS, ("General", "Clunk")),
-            # Decided by the user 2026-11-02:
-            "Challenge Charm 24": self.card("PinkberryJuice"),                         # Berry Good
-            "Challenge Charm 2": self.card("Snowcake"),                                # Snowball Fight
-            "Challenge Charm 3": self.big_hitter(),                                    # Big Hitter
-            "Challenge Charm 4": self.card("SpiceStones"),                             # Bigger Hitter
-            "Challenge Charm 18": self.hoarder(),                                      # Hoarder
-            # Use Smackback to kill 20 enemies (decided by the user 2026-11-06): Snowdweller and
-            # Shademancer runs have Smackback leaders and Clunkmasters have none, so a Clunkmaster
-            # start needs one of those clans, Gojiber or the Punchfist Charm.
-            "Challenge Companion 4": Or(Has(CLANS["Basic"]), Has(CLANS["Magic"]),
-                                        self.any_of(("Noggin", "CardUpgradePunchfist"))),
-            # Minimalist: Toaster empties the deck, or the Gunk Bugs fight does it for you.
-            "Challenge Charm 23": Or(self.card("Havok"), *(battle_rule(key, info, self.extra, self.reversed) for key, _, _, info in LOCATIONS
-                                                           if key.startswith("battle:2:Mimiks:"))),
-        }
-        if internal.startswith("ap:"):
-            return self.new_challenge(internal)
-        return rules.get(internal)
+    def clan_kit(self, spec: dict, region: str):
+        """
+        ["clan_kit", {...}]: one clan's run with its tribe and: "companions", "items" (packs), "charms",
+        "cards" (companion or item packs together); "forced_extra" adds the forced bells' extra pack to the
+        items; "area_kit" adds the region's kit for that same clan (area_kit). "clan" sets the clan;
+        otherwise any clan will do.
+        """
+        def kit(clan: str):
+            items = spec.get("items", 0) + (self.extra if spec.get("forced_extra") else 0)
+            counts = (spec.get("companions", 0), items, spec.get("charms", 0))
+            parts = [packs(clan, *counts) if any(counts) else None,
+                     card_packs(clan, spec["cards"]) if spec.get("cards") else None,
+                     area_kit(region, clan, self.extra, self.world.true_final_bells) if spec.get("area_kit") else None]
+            return both(*parts)
+        clan = spec.get("clan")
+        return both(tribe_rule({clan}), kit(clan)) if clan else any_clan(kit)
 
-    def new_challenge(self, internal: str):
-        """New Challenges' own needs (the user's calls, 2026-11-08); kits are in challenge_kit."""
-        if internal in BELL_CHALLENGES and not self.reversed:
-            return Has(STORM_BELL)
-        rules = {
-            "ap:charm_merchant": Has("Charm Merchant"),
-            # A Clunker to copy: one from a pack, or Woodhead from the Snowdweller starting deck.
-            "ap:shade_sculptor": both(Has("Shade Sculptor"), Or(Has(CLANS["Basic"]), self.any_of(CLUNKERS))),
-            "ap:gnome_traveller": Has("Gnome Traveller"),
-            "ap:haze": self.any_of(HAZE_CARDS),
-            "ap:ink": Or(Has(CLANS["Clunk"]), self.card("CardUpgradeInk"), Has(INK_PET)),  # Squid Charm, Binku
-            "ap:icgm": self.card("OhNo"),
-            "ap:egg": self.card("Egg"),
-            "ap:soulbound": self.card("VoidStaff"),  # Soulbound Skulls
-            "ap:sheepopper": self.card("PopPopper"),  # Sheepopper Mask
-            "ap:skull_muffin": self.any_of(("SkullMuffin", "TheBaker")),
-            "ap:bom": Or(Has(CLANS["Basic"]), Has(CLANS["Clunk"])),
-            "ap:spice": self.two_of(SPICE_CARDS),
-            "ap:stormbear": self.card("StormbearSpirit"),
-            "ap:moko_totem": both(self.card("Peppermaton"), self.two_of(SPICE_CARDS)),
-        }
-        return rules.get(internal)
+    def battle_alternatives(self, battle: str) -> list:
+        """Winning that battle (BattleData name), with any run tribe it's a check for, unless it was removed."""
+        if battle in getattr(self.world, "removed", {}).get("battles", ()):
+            return []
+        return [battle_rule(key, info, self.extra, self.reversed, self.world.true_final_bells) for key, _, _, info in LOCATIONS
+                if key.startswith("battle:") and key.split(":")[2] == battle and not info.get("second")]
+
+
+def impossible_challenges(world: WildfrostWorld) -> set[str]:
+    """
+    Challenges (by internal name) this slot can't do after its extensions' removals (PLAN.md §10), found
+    before the locations are made so they're left out (locations.included) and the pool fits.
+    """
+    if not any(getattr(world, "removed", {}).values()):
+        return set()
+    cards = CardRules(world)
+    impossible = set()
+    for key, _, _, info in LOCATIONS:
+        if not key.startswith("challenge:") or not world.uses(info):
+            continue
+        try:
+            if info.get("rule"):
+                cards.extension_rule(info["rule"], challenge_region(info))
+        except Impossible:
+            impossible.add(info["internal"])
+    return impossible
 
 
 # Rules for the client's tracker (slot_data "location_rules"), with item names turned into the item
@@ -454,6 +535,7 @@ class CardRules:
 # together, which would otherwise list every key each time. A location without an
 # entry needs nothing.
 ITEM_KEY_BY_NAME = {name: key for key, name, _, _ in ITEMS}
+ITEM_NAME_BY_KEY = {key: name for key, name, _, _ in ITEMS}
 PACK_GROUPS = {
     **{frozenset(clan_packs(clan, kind)): [clan, kind] for clan in CLANS for kind in PACK_KINDS},
     # "": companion and item packs together (the forced extra's count).
@@ -481,18 +563,21 @@ def set_all_rules(world: WildfrostWorld) -> None:
     reversed_bells = reverse(world)
     world.location_rules = {}
     for key, name, _, info in LOCATIONS:
-        if not included(world, info):
+        if not included(world, info, key):
             continue
         if key.startswith("battle:"):
-            rule = battle_rule(key, info, extra, reversed_bells)
+            rule = battle_rule(key, info, extra, reversed_bells, world.true_final_bells)
         else:
-            rule = both(tribe_rule(required_tribes(key, info)), challenge_kit(info, extra, reversed_bells),
-                        cards.for_challenge(info["internal"]))
+            # A challenge's own needs: its row's rule, ours and extensions' alike (PLAN.md §10).
+            needs = cards.extension_rule(info["rule"], challenge_region(info)) if info.get("rule") else None
+            rule = both(challenge_kit(info, extra, reversed_bells, world.true_final_bells), needs)
         if rule is not None:
             world.set_rule(world.get_location(name), rule)
             world.location_rules[key] = rule_json(rule)
 
     kit = (lambda clan, _: reverse_true_final_kit(clan)) if reversed_bells else GOAL_KIT[world.options.goal.value]
+    if kit is true_final_kit:
+        kit = lambda clan, extra: true_final_kit(clan, extra, world.true_final_bells)  # noqa: E731
     for clan in CLANS:
         world.set_rule(world.get_location(victory_location(clan)), both(tribe_rule({clan}), kit(clan, extra)))
 

@@ -1,0 +1,181 @@
+{
+  "format": 1,
+  "mod": "SampleMod",
+  "guid": "test.wildfrost.samplemod",
+  "version": "1.0.0",
+  "id_block": 0,
+  "cards": {
+    "companions": {
+      "Basic": [
+        {
+          "key": "card:SampleTroll",
+          "name": "Sample Troll"
+        },
+        {
+          "key": "card:SampleBog",
+          "name": "Sample Bog"
+        },
+        {
+          "key": "card:SampleMoss",
+          "name": "Sample Moss"
+        }
+      ]
+    },
+    "items": {
+      "General": [
+        {
+          "key": "card:SampleHammer",
+          "name": "Sample Hammer",
+          "applies": [
+            "SampleMod.Bog"
+          ]
+        },
+        {
+          "key": "card:SampleShroom",
+          "name": "Sample Shroom"
+        },
+        {
+          "key": "card:SampleBoot",
+          "name": "Sample Boot"
+        }
+      ]
+    },
+    "charms": {
+      "General": [
+        {
+          "key": "card:CardUpgradeSampleBog",
+          "name": "Sample Bog Charm"
+        }
+      ]
+    }
+  },
+  "ap_items": {
+    "Pack": [
+      {
+        "key": "pack:General:Item:SampleMod-1",
+        "name": "SampleMod General Item Pack 1",
+        "id": 100000,
+        "clan": "General",
+        "card_kind": "Item"
+      },
+      {
+        "key": "pack:Basic:Companion:SampleMod-1",
+        "name": "SampleMod Snowdweller Companion Pack 1",
+        "id": 100001,
+        "clan": "Basic",
+        "card_kind": "Companion"
+      },
+      {
+        "key": "pack:Basic:Companion:SampleMod-Troll",
+        "name": "SampleMod Troll Pack",
+        "id": 100003,
+        "clan": "Basic",
+        "card_kind": "Companion",
+        "cards": [
+          "card:SampleTroll"
+        ]
+      }
+    ],
+    "Charm": [
+      {
+        "key": "charm:General:CardUpgradeSampleBog",
+        "name": "Sample Bog Charm",
+        "id": 100002,
+        "clan": "General",
+        "card": "card:CardUpgradeSampleBog"
+      }
+    ]
+  },
+  "ap_locations": {
+    "battles": [
+      {
+        "key": "battle:1:SampleTrolls:Basic",
+        "name": "Area 2 Battle - The Sample Trolls (Snowdwellers)",
+        "id": 100000,
+        "area": 1,
+        "tier": 4,
+        "boss": false,
+        "tribe": null,
+        "run_tribe": "Basic"
+      },
+      {
+        "key": "battle:1:SampleTrolls:Magic",
+        "name": "Area 2 Battle - The Sample Trolls (Shademancers)",
+        "id": 100001,
+        "area": 1,
+        "tier": 4,
+        "boss": false,
+        "tribe": null,
+        "run_tribe": "Magic"
+      },
+      {
+        "key": "battle:1:SampleTrolls:Clunk",
+        "name": "Area 2 Battle - The Sample Trolls (Clunkmasters)",
+        "id": 100002,
+        "area": 1,
+        "tier": 4,
+        "boss": false,
+        "tribe": null,
+        "run_tribe": "Clunk"
+      }
+    ],
+    "challenges": [
+      {
+        "key": "challenge:SampleMod Challenge 1",
+        "name": "Challenge - Smash 5 Trolls",
+        "id": 100003,
+        "text": "Smash 5 Trolls with the Sample Hammer",
+        "region": "Area 2",
+        "rule": [
+          "card",
+          "SampleHammer"
+        ]
+      },
+      {
+        "key": "challenge:SampleMod Challenge 2",
+        "name": "Challenge - Apply 30 Bog",
+        "id": 100004,
+        "text": "Apply 30 Bog",
+        "rule": [
+          "two_of",
+          "applies:Bog"
+        ]
+      },
+      {
+        "key": "challenge:SampleMod Challenge 3",
+        "name": "Challenge - Win with 3 Shrooms",
+        "id": 100005,
+        "text": "Win a run with 3 Shroom cards",
+        "region": "Area 3",
+        "rule": [
+          "any_card",
+          "shroom"
+        ],
+        "excluded": true
+      },
+      {
+        "key": "challenge:SampleMod Challenge 4",
+        "name": "Challenge - Bog 3 enemies",
+        "id": 100007,
+        "text": "Bog 3 enemies",
+        "rule": [
+          "applies",
+          "SampleMod.Bog"
+        ]
+      }
+    ],
+    "spares": {
+      "challenge:SampleMod Challenge 1": 100006
+    }
+  },
+  "groups": {
+    "shroom": [
+      "SampleShroom"
+    ],
+    "applies:Bog": [
+      "SampleHammer",
+      "CardUpgradeSampleBog",
+      "tribe:Clunk"
+    ]
+  }
+}

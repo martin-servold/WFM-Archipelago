@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "mod": "BellMod",
+  "guid": "test.wildfrost.bellmod",
+  "version": "1.0.0",
+  "id_block": 2,
+  "cards": {},
+  "ap_locations": {
+    "challenges": [
+      {
+        "key": "challenge:BellMod Challenge 1",
+        "name": "Challenge - Ring the Troll Bell",
+        "id": 104000,
+        "text": "Win a battle with the Troll Bell rung",
+        "rule": [
+          "bell",
+          "BellMod.TrollBell"
+        ]
+      }
+    ]
+  },
+  "bells": [
+    {
+      "name": "BellMod.TrollBell",
+      "points": 2
+    }
+  ],
+  "removes": {
+    "bells": [
+      "1.EnemiesHaveCharms",
+      "13.LeaderLosesHealthAfterBattles",
+      "12.CursedCrowns",
+      "9.MoreEnemiesInBossBattles",
+      "4.FrostlandEnemiesIncreaseAttack",
+      "3.ReduceEnemyWaveCounter",
+      "8.IceCavesEnemiesIncreaseAttack",
+      "10.BossesHaveCharms"
+    ]
+  }
+}

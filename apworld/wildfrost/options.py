@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from Options import Choice, DeathLink, DefaultOnToggle, PerGameCommonOptions, Range, Toggle
+from Options import Choice, DeathLink, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range, Toggle
 
 
 class Goal(Choice):
@@ -167,6 +167,17 @@ class DeathLinkDamagePercent(Range):
     default = 100
 
 
+class ModContent(OptionSet):
+    """
+    Content from other Wildfrost mods to include, by their extension's name (for example ["MyMod"]). Each needs
+    its mod's extension file (<Mod>.wildfrost.json) in Archipelago's custom_worlds folder on the computer that
+    generates, and the mod loaded in your game. Empty: the base game only.
+    """
+
+    display_name = "Mod Content"
+    default = frozenset()
+
+
 @dataclass
 class WildfrostOptions(PerGameCommonOptions):
     starting_tribe: StartingTribe
@@ -177,6 +188,7 @@ class WildfrostOptions(PerGameCommonOptions):
     force_storm_bells_up_to: ForceStormBellsUpTo
     trap_percentage: TrapPercentage
     new_challenges: NewChallenges
+    mod_content: ModContent
     game_speed_up: GameSpeedUp
     leader_reroll: LeaderReroll
     disable_possessed_final_boss: DisablePossessedFinalBoss

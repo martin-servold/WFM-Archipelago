@@ -3,9 +3,10 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from Options import OptionError
 from worlds.AutoWorld import World
 
-from . import items, locations, regions, rules, web_world
+from . import content, extensions, items, locations, regions, rules, web_world
 from . import options as wildfrost_options  # renamed: World.options is taken
 
 
@@ -19,6 +20,32 @@ def force_points(slot_data: Mapping[str, Any]) -> int:
         return slot_data["force_storm_bells_up_to"]
     toggles = int(bool(slot_data.get("force_storm_bells"))) + int(bool(slot_data.get("force_overcrank")))
     return (0, 20, rules.OVERCRANK_POINTS)[toggles]
+
+
+def chosen_extensions(names) -> set[str]:
+    """The Mod Content option's extensions, each installed and loaded, or an error that says why not."""
+    for name in sorted(names):
+        if name in extensions.FAILED:
+            raise OptionError(f"Wildfrost: Mod Content {name!r}: its extension file didn't load: {extensions.FAILED[name]}")
+        if name not in extensions.LOADED:
+            have = ", ".join(sorted(extensions.LOADED)) or "none"
+            raise OptionError(f"Wildfrost: Mod Content {name!r} needs its extension file ({name}{extensions.SUFFIX}) in "
+                              f"Archipelago's custom_worlds folder; installed: {have}")
+    return set(names)
+
+
+def rebuilt_extensions(slot_data: Mapping[str, Any]) -> set[str]:
+    """
+    Universal Tracker's rebuild: the seed's extensions must be installed here as the same files, or the
+    rebuilt logic would quietly differ from the seed's (PLAN.md §10).
+    """
+    for meta in slot_data.get("extensions", []):
+        ext = extensions.LOADED.get(meta["mod"])
+        if ext is None or ext.hash != meta["hash"]:
+            have = f"you have version {ext.version}" if ext else "it isn't installed"
+            raise OptionError(f"Wildfrost: this seed used {meta['mod']} {meta['version']} ({meta['mod']}{extensions.SUFFIX}); "
+                              f"{have}. Install the same file in custom_worlds to track it.")
+    return {meta["mod"] for meta in slot_data.get("extensions", [])}
 
 
 def progression_direction(slot_data: Mapping[str, Any]) -> int:
@@ -51,6 +78,46 @@ class WildfrostWorld(World):
     ut_can_gen_without_yaml = True
     # Bells fit the goal (items.storm_bells_in_pool); False when Universal Tracker rebuilds an older seed.
     goal_sized_bells: bool = True
+    # The extensions this slot uses (Mod Content); content from others is never in its seed.
+    extensions: set[str] = frozenset()
+    # Base game content those extensions take out, by extensions.REMOVE_KINDS.
+    removed: dict[str, set[str]]
+    # Challenges (by internal name) whose needs are impossible after those removals (rules.CardRules).
+    impossible: set[str]
+    # This slot's storm bells and their points: the base game's less removed ones, plus its extensions'.
+    bell_points: dict[str, int]
+    # The True Final Boss's storm point threshold (the Lumin Vase appears at it), and the Progressive Storm
+    # Bells that reach it: 10 and 5, unless the bells left can't reach 10 (the user's call, 2026-11-15).
+    true_final_points: int = rules.TRUE_FINAL_POINTS
+    true_final_bells: int = items.TRUE_FINAL_BELLS
+    # The spare "#2" checks this seed has (locations.spare_checks; None until worked out), and how many
+    # packs each extension group is held to when packs are made fuller.
+    spare_checks: set[str] | None = None
+    pack_limits: dict
+
+    def set_bells(self) -> None:
+        """This slot's storm bells, and the True Final Boss threshold they can reach (PLAN.md §10)."""
+        self.bell_points = {name: points for name, points in content.BELL_POINTS.items()
+                            if name not in self.removed["bells"] and (name in content.BASE_BELLS or any(
+                                name in extensions.LOADED[mod].bells for mod in self.extensions))}
+        reachable = sum(self.bell_points.values())
+        self.true_final_points = min(rules.TRUE_FINAL_POINTS, reachable)
+        self.true_final_bells = max(1, -(-self.true_final_points // 2))
+        if self.true_final_points < rules.TRUE_FINAL_POINTS:
+            logging.warning(f"Wildfrost: {self.player_name}'s storm bells reach {reachable} storm points with "
+                            f"{', '.join(sorted(self.extensions))}, so the Lumin Vase (True Final Boss) appears at "
+                            f"{self.true_final_points}")
+
+    def removals(self) -> dict[str, set[str]]:
+        removed = {kind: set() for kind in extensions.REMOVE_KINDS}
+        for mod in self.extensions:
+            for kind, names in extensions.LOADED[mod].removes.items():
+                removed[kind] |= names
+        return removed
+
+    def uses(self, info: Mapping[str, Any]) -> bool:
+        """Whether a row (location, item or card info) is in this slot's game: ours, or a chosen extension's."""
+        return "ext" not in info or info["ext"] in self.extensions
 
     def generate_early(self) -> None:
         slot_data = getattr(self.multiworld, "re_gen_passthrough", {}).get(self.game)
@@ -66,7 +133,15 @@ class WildfrostWorld(World):
             self.options.new_challenges.value = int(slot_data.get("new_challenges", False))
             self.pack_contents = slot_data["packs"]
             self.starting_pet = slot_data["starting_pet"]
+            self.extensions = rebuilt_extensions(slot_data)
+            self.removed = self.removals()
+            self.set_bells()
+            self.spare_checks = set(slot_data.get("spare_checks", []))
         else:
+            self.extensions = chosen_extensions(self.options.mod_content.value)
+            self.removed = self.removals()
+            self.set_bells()
+            self.pack_limits = {}
             if self.options.progression_direction == self.options.progression_direction.option_reverse:
                 # Reverse Storm Bells: the True Final Boss is the goal, and the bells force themselves.
                 if self.options.goal != self.options.goal.option_true_final_boss:
@@ -76,12 +151,18 @@ class WildfrostWorld(World):
             elif self.options.goal == self.options.goal.option_true_final_boss:
                 # The pool only has the 5 bells it needs plus extras (items.storm_bells_in_pool), so
                 # forcing past what they reach (and the extra pack logic adds at 22) would never apply.
-                cap = 2 * (items.TRUE_FINAL_BELLS + self.options.extra_storm_bells.value)
+                cap = 2 * (self.true_final_bells + self.options.extra_storm_bells.value)
                 self.options.force_storm_bells_up_to.value = min(self.options.force_storm_bells_up_to.value, cap)
+            # Forcing past what this slot's storm bells can reach would hold every run back (an extension
+            # removed bells, PLAN.md §10). 22 (Overcrank) rings every bell there is, so it stays.
+            reachable = sum(self.bell_points.values())
+            if rules.OVERCRANK_POINTS > self.options.force_storm_bells_up_to.value > reachable:
+                self.options.force_storm_bells_up_to.value = reachable
             # Storm points come in steps of 2: an odd number means the even one below.
             self.options.force_storm_bells_up_to.value -= self.options.force_storm_bells_up_to.value % 2
             self.pack_contents = items.fill_packs(self)
-            self.starting_pet = self.random.choice(items.PET_NAMES)
+            self.starting_pet = self.random.choice(items.pet_names(self))
+        self.impossible = rules.impossible_challenges(self)
         self.multiworld.push_precollected(self.create_item(items.starting_tribe(self)))
         self.multiworld.push_precollected(self.create_item(self.starting_pet))
 
@@ -107,9 +188,11 @@ class WildfrostWorld(World):
         # never breaks the client. card_kinds tells it which reward pool (Item, Companion, Charm) to
         # lock each card in, and packs which cards each pack item unlocks this seed.
         return {
-            "location_ids": locations.LOCATION_ID_BY_KEY,
-            "item_keys": {str(item_id): key for item_id, key in items.ITEM_KEY_BY_ID.items()},
-            "card_kinds": items.CARD_KIND_BY_KEY,
+            # Only this slot's game: ours and its extensions' (an unpicked extension's pet listed here would
+            # stay locked for good, the client taking it for one of this seed's items).
+            "location_ids": {key: loc_id for key, _, loc_id, info in content.LOCATIONS if self.uses(info)},
+            "item_keys": {str(item_id): key for key, _, item_id, info in content.ITEMS if self.uses(info)},
+            "card_kinds": {key: info["kind"] for key, _, info in content.CARDS if self.uses(info)},
             "packs": self.pack_contents,
             # 0 Final Boss, 1 True Final Boss, 2 Overcranked True Final Boss (each clans_required clan).
             "goal": self.options.goal.value,
@@ -146,4 +229,12 @@ class WildfrostWorld(World):
             # Client) drop any message nested over 16 deep (NetUtils._check_depth, AP PR #6378), and
             # the rules nest up to 15 inside slot_data. A string counts as no depth (found 2026-11-13).
             "location_rules": json.dumps(self.location_rules, separators=(",", ":")),
+            # The extensions this seed uses (PLAN.md §10): the client checks their mods are loaded, and
+            # Universal Tracker that the same files are installed.
+            "extensions": [extensions.LOADED[mod].meta() for mod in sorted(self.extensions)],
+            # The True Final Boss's storm point threshold: 10, or the most a slot's storm bells reach when its
+            # extensions remove too many (the client moves the Lumin Vase to it).
+            "true_final_points": self.true_final_points,
+            # Spare "#2" checks added for room (locations.spare_checks), for Universal Tracker's rebuild.
+            "spare_checks": sorted(self.spare_checks or ()),
         }

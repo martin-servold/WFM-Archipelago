@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "mod": "RemoverMod",
+  "guid": "test.wildfrost.removermod",
+  "version": "1.0.0",
+  "id_block": 1,
+  "cards": {},
+  "removes": {
+    "cards": [
+      "Egg",
+      "PinkberryJuice"
+    ],
+    "charms": [
+      "CardUpgradeInk"
+    ],
+    "battles": [
+      "Mimiks"
+    ],
+    "challenges": [
+      "Challenge Charm 10"
+    ],
+    "bells": [
+      "9.MoreEnemiesInBossBattles"
+    ]
+  }
+}

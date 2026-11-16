@@ -1,6 +1,7 @@
 .vs/
 bin/
 obj/
+data/
 *.user
 __pycache__/
 *.pyc

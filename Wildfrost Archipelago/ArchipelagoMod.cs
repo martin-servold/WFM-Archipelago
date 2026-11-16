@@ -72,14 +72,7 @@ namespace WildfrostArchipelago
             {
                 SurveyLog.Open(ModDirectory);
                 HookSurvey.Enable();
-                try
-                {
-                    ContentDump.Write(ModDirectory);
-                }
-                catch (Exception e)
-                {
-                    SurveyLog.Write("content dump failed: " + e);
-                }
+                ContentDump.Enable(ModDirectory);
                 HookSurvey.CheckState("mod load");
             }
 
@@ -93,6 +86,7 @@ namespace WildfrostArchipelago
             ApMode.Exit();
             GameSpeed.Reset();
             HookSurvey.Disable();
+            ContentDump.Disable();
             SurveyLog.Close();
 
             Client?.Disconnect();

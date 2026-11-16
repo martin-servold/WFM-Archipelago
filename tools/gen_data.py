@@ -1,18 +1,28 @@
-"""Generate apworld/wildfrost/data.py from data/content_dump.txt (written in game by ContentDump.cs).
+"""Generate apworld/wildfrost/base.wildfrost.json from data/content_dump.txt (written in game by ContentDump.cs).
 
-IDs are frozen: entries already in the existing data.py keep their ID, and new entries are appended
+The base game's content, in the same layout as a mod's extension file (PLAN.md §10; the user's call,
+2026-11-15: our own data is the example creators follow), plus what only the base game has (tribes,
+events, filler, traps, the storm bell item, "#2" and spare checks). It ships inside wildfrost.apworld,
+and data.py reads it.
+
+IDs are frozen: entries already in the existing file keep their ID, and new entries are appended
 after the highest ID in their range. Never renumber, because seeds and saves refer to IDs.
 
 Usage: python3 -I tools/gen_data.py
 """
 import ast
+import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DUMP = ROOT / "data" / "content_dump.txt"
-OUT = ROOT / "apworld" / "wildfrost" / "data.py"
+OUT = ROOT / "apworld" / "wildfrost" / "base.wildfrost.json"
+# Written by hand in OUT, kept when it's regenerated.
+HAND_FIELDS = ("region", "rule", "excluded")
+# Before 2026-11-15 the tables were in data.py itself; read once for the IDs when switching over.
+OLD_PY = ROOT / "apworld" / "wildfrost" / "data.py"
 
 AREA_OF_TIER = {0: 0, 1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2}
 BOSS_TIERS = {2, 5, 7, 8}
@@ -109,8 +119,60 @@ def section(text, title):
     return m.group(1)
 
 
-def main():
-    text = DUMP.read_text(encoding="utf-8")
+EFFECT_LINE = re.compile(r"^  (\S+) type=(\S+) attack=\[(.*?)\] (?:start|effects)=\[(.*?)\] traits=\[(.*?)\] scripts=\[(.*?)\]$", re.M)
+
+
+
+def _names(stacks: str) -> list[str]:
+    """Effect names in a dump list: "A x1, B -> C x2" gives A, B -> C (counts dropped)."""
+    return [re.sub(r" x-?\d+$", "", part.strip()) for part in re.split(r", (?=[^,]*? x-?\d+(?:,|$))", stacks) if part.strip()]
+
+
+def effects(text: str) -> dict:
+    """
+    What each card and charm applies (the dump's Card and Charm effects): its attack effects, and what
+    its "apply X" effects and create scripts (how leaders get their abilities) apply; and its traits
+    (keywords such as Smackback or Consume), its own, a charm's given ones and those its scripts add.
+    {name: (type, applied set, traits set)}
+    """
+    out = {}
+    for title in ("Card effects", "Charm effects"):
+        try:
+            body = section(text, title)
+        except SystemExit:
+            sys.exit("the dump has no effects: take it with the current Archipelago mod")
+        for m in EFFECT_LINE.finditer(body):
+            name, kind, attack, start, trait_list, scripts = m.groups()
+            traits = set(_names(trait_list))
+            applied = set(_names(attack))
+            for effect in _names(start):
+                if " -> " in effect:
+                    applied.add(effect.split(" -> ", 1)[1])
+            for script in scripts.split(", "):
+                if script.startswith("trait:"):
+                    traits.add(script[len("trait:"):])
+                for prefix in ("attack:", "start:"):
+                    if script.startswith(prefix):
+                        effect = script[len(prefix):]
+                        applied.add(effect.split(" -> ", 1)[1] if " -> " in effect else effect)
+            out[name] = (kind, {e.split(" -> ", 1)[1] if " -> " in e else e for e in applied} - {"null"}, traits - {"null"})
+    return out
+
+
+def leaders(text: str) -> dict[str, list[str]]:
+    try:
+        body = section(text, "Clan leaders")
+    except SystemExit:
+        return {}
+    return {m.group(1): [n for n in m.group(2).split(", ") if n] for m in re.finditer(r"^  (\S+): (.*)$", body, re.M)}
+
+
+def parse(text: str) -> dict:
+    """
+    A content dump's battles, challenges, cards and pets, as main() and tools/make_extension.py use them:
+    battles are (key, name, area, boss, tribe lock, run tribe, true final, tier), challenges (key, name,
+    internal, text), cards {name: (pool type, pool)}, titles {name: title}.
+    """
 
     titles = {}
     for m in re.finditer(r'^    (\S+) "([^"]*)"', text, re.M):
@@ -164,11 +226,59 @@ def main():
 
     # Every pet, Wolfie (Snoof) too: it has no unlock (always available in vanilla), and became a pet
     # item like the others (the user's call, 2026-11-02); the client locks it.
-    pets = [m.group(1) for m in re.finditer(r"^  (\w+) ->", section(text, "Pets"), re.M)]
+    pets = [m.group(1) for m in re.finditer(r"^  (\S+) ->", section(text, "Pets"), re.M)]
+
+    has_effects = "## Card effects" in text
+    return {"titles": titles, "battle_names": battle_names, "battles": battles, "challenges": challenges,
+            "cards": cards, "pets": pets, "effects": effects(text) if has_effects else {}, "leaders": leaders(text)}
+
+
+def rows_of(section) -> list:
+    """
+    A section's rows, nested by kind (from 2026-11-15) or a plain list (before). In ap_locations, "twins"
+    and "spares" ({original key: id}, from 2026-11-16) come back as "#2" rows with just their key and ID.
+    """
+    if isinstance(section, dict):
+        rows = []
+        for name, value in section.items():
+            if name in ("twins", "spares") and isinstance(value, dict) and all(isinstance(v, int) for v in value.values()):
+                rows += [{"key": k + "#2", "id": i} for k, i in value.items()]
+            else:
+                rows += rows_of(value) if isinstance(value, dict) else value
+        return rows
+    return list(section or [])
+
+
+def dump_json(doc: dict) -> str:
+    """JSON with one entry per line in each list, so the file reads (and diffs) a row at a time."""
+    def value(v, indent: str) -> str:
+        if isinstance(v, dict) and len(v) > 3 and all(isinstance(x, (int, str)) for x in v.values()):
+            rows = ",\n".join(f"{indent}  {json.dumps(k)}: {json.dumps(x)}" for k, x in v.items())
+            return "{\n" + rows + "\n" + indent + "}"
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            rows = ",\n".join(indent + "  " + json.dumps(r, ensure_ascii=False) for r in v)
+            return "[\n" + rows + "\n" + indent + "]"
+        if isinstance(v, dict) and any(isinstance(x, (list, dict)) for x in v.values()) and any(
+                isinstance(x, list) and x and isinstance(x[0], dict) or isinstance(x, dict) for x in v.values()):
+            inner = ",\n".join(f'{indent}  {json.dumps(k)}: {value(x, indent + "  ")}' for k, x in v.items())
+            return "{\n" + inner + "\n" + indent + "}"
+        return json.dumps(v, ensure_ascii=False)
+    return value(doc, "") + "\n"
+
+
+def main():
+    parsed = parse(DUMP.read_text(encoding="utf-8"))
+    text = DUMP.read_text(encoding="utf-8")
+    titles, battles, challenges, cards, pets = (parsed[k] for k in ("titles", "battles", "challenges", "cards", "pets"))
 
     old_loc, old_item = {}, {}
+    old = {}
     if OUT.exists():
-        tree = ast.parse(OUT.read_text(encoding="utf-8"))
+        old = json.loads(OUT.read_text(encoding="utf-8"))
+        old_loc = {r["key"]: r["id"] for r in rows_of(old["ap_locations"])}
+        old_item = {r["key"]: r["id"] for r in rows_of(old["ap_items"])}
+    elif OLD_PY.exists() and "LOCATIONS = [" in OLD_PY.read_text(encoding="utf-8"):
+        tree = ast.parse(OLD_PY.read_text(encoding="utf-8"))
         for node in tree.body:
             if isinstance(node, ast.Assign) and node.targets[0].id == "LOCATIONS":
                 old_loc = {e[0]: e[2] for e in ast.literal_eval(node.value)}
@@ -190,7 +300,12 @@ def main():
     battle_ids = assign([b[0] for b in battles], old_loc, LOC_BATTLE)
     challenge_ids = assign([c[0] for c in challenges], old_loc, LOC_CHALLENGE)
     seconds = [b[0] for b in battles if b[3]] + [c[0] for c in challenges if doubled_challenge(c[2])]
-    second_ids = assign([k + "#2" for k in seconds], old_loc, LOC_SECOND)
+    # Spare "#2" checks for every other challenge, New Challenges too: a seed only has them when its mod
+    # extensions bring more items than it has checks (the user's call, 2026-11-15; locations.spare_checks).
+    spares = [c[0] for c in challenges if not doubled_challenge(c[2])] + [f"challenge:ap:{slug}" for slug, _ in AP_CHALLENGES]
+    # ...and for the regular battles, used after the challenges' (the user's call, 2026-11-15).
+    battle_spares = [b[0] for b in battles if not b[3]]
+    second_ids = assign([k + "#2" for k in seconds + spares + battle_spares], old_loc, LOC_SECOND)
     ap_ids = assign([f"challenge:ap:{slug}" for slug, _ in AP_CHALLENGES], old_loc, LOC_AP_CHALLENGE)
 
     tribe_keys = [f"tribe:{t}" for t in RUN_TRIBES]
@@ -227,6 +342,8 @@ def main():
                   for k, n, _, info in list(locations) if k in seconds]
     locations += [(f"challenge:ap:{slug}", f"Challenge - {text}", ap_ids[f"challenge:ap:{slug}"],
                    {"internal": f"ap:{slug}", "text": text, "ap": True}) for slug, text in AP_CHALLENGES]
+    locations += [(k + "#2", n + " #2", second_ids[k + "#2"], {**info, "second": True, "spare": True})
+                  for k, n, _, info in list(locations) if k in spares or k in battle_spares]
     items = [(k, RUN_TRIBES[k.split(":")[1]], item_ids[k], {"kind": "Tribe"}) for k in tribe_keys]
     items += [(k, EVENT_NODES[k.split(":")[1]], item_ids[k], {"kind": "Event"}) for k in event_keys]
     items += [(k, f"{titles.get(k[4:], k[4:])} Pet", item_ids[k], {"kind": "Pet"}) for k in pet_keys]
@@ -249,21 +366,68 @@ def main():
         if dupes:
             sys.exit(f"duplicate {what} names: {sorted(dupes)}")
 
+    # The storm bells (PLAN.md §10, 2026-11-15): (game name, storm points, title). Some New Challenges
+    # need a particular one, and extensions may remove some.
+    bells = [(m.group(1), int(m.group(2)), m.group(3)) for m in
+             re.finditer(r'^  (\S+) points=(\d+) modifier=\S+ title="([^"]*)"', section(text, "Storm bells"), re.M)]
+    if not bells:
+        sys.exit("no storm bells in the dump's Storm bells section")
+
     def fmt(rows):
         return "[\n" + "".join(f"    {r!r},\n" for r in rows) + "]"
 
+    # What's written by hand in the file stays (PLAN.md §10, phase 2): each challenge's rule, region and
+    # filler-only flag, and the groups, as make_extension.py keeps a creator's.
+    hand = {r["key"]: {f: r[f] for f in HAND_FIELDS if f in r} for r in rows_of(old.get("ap_locations", []))}
+    locations = [(k, n, i, {**info, **hand.get(k, {})}) for k, n, i, info in locations]
+    new_challenges = [k for k, _, _, info in locations if k.startswith("challenge:") and "region" not in info
+                      and not info.get("second")]
+    if old and new_challenges:
+        print(f"note: new challenges with no rule or region yet (write them in {OUT.name}): {', '.join(new_challenges)}")
+    sections = {"Companion": "companions", "Item": "items", "Charm": "charms"}
+    effects_of = parsed["effects"]
+
+    def applies(name: str) -> dict:
+        """What a card applies and its traits (the dump's effects), for the "applies" and "trait" rule forms."""
+        _, applied, traits = effects_of.get(name, ("", set(), set()))
+        return {**({"applies": sorted(applied)} if applied else {}), **({"traits": sorted(traits)} if traits else {})}
+
+    def by(rows: list, group_of, order=()) -> dict:
+        out: dict = {key: [] for key in order}
+        for row in rows:
+            out.setdefault(group_of(row), []).append(row)
+        return {key: value for key, value in out.items() if value}
+
+    doc = {
+        "format": 1,
+        "mod": "Wildfrost",
+        "note": "The base game, generated by tools/gen_data.py from data/content_dump.txt. Do not edit by hand. "
+                "Same layout as a mod's extension file, plus what only the base game has.",
+        # Cards by kind, then clan (the user's layout, 2026-11-15), with what each applies.
+        "cards": {section: by([{"key": k, "name": n, "clan": info["clan"], **applies(k[5:])}
+                               for k, n, info in card_rows if info["kind"] == kind],
+                              lambda r: r.pop("clan"), order=CLAN_LABEL) for kind, section in sections.items()},
+        # Each clan's leaders and what they apply ("applies" counts a clan whose leaders do it).
+        "leaders": {clan: [{"key": leader, **applies(leader)} for leader in parsed["leaders"].get(clan, [])]
+                    for clan in RUN_TRIBES},
+        "ap_items": by([{"key": k, "name": n, "id": i, **info} for k, n, i, info in items], lambda r: r.pop("kind")),
+        # A "#2" check is its original with another ID (the user's call, 2026-11-16): "twins" always come
+        # with their original (bosses; charm challenges with New Challenges off), "spares" only when a seed
+        # needs room (locations.spare_checks). Both share their original's row, rule and all.
+        "ap_locations": {
+            **by([{"key": k, "name": n, "id": i, **info} for k, n, i, info in locations if not info.get("second")],
+                 lambda r: "battles" if r["key"].startswith("battle:") else "challenges"),
+            "twins": {k.removesuffix("#2"): i for k, _, i, info in locations if info.get("second") and not info.get("spare")},
+            "spares": {k.removesuffix("#2"): i for k, _, i, info in locations if info.get("spare")},
+        },
+        "bells": [{"name": n, "points": p, "title": t} for n, p, t in bells],
+        "groups": old.get("groups", {}),
+    }
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(
-        '"""Generated by tools/gen_data.py from data/content_dump.txt. Do not edit by hand.\n\n'
-        "Each row is (key, display name, id, info). The key is what the client matches against game\n"
-        'data (it is sent to the client in slot_data); the display name is what players see."""\n\n'
-        f"PACK_SIZE = {PACK_SIZE}\n\nLOCATIONS = {fmt(locations)}\n\nITEMS = {fmt(items)}\n\n"
-        "# Not items themselves: the cards that packs are filled with. (key, display name, info)\n"
-        f"CARDS = {fmt(card_rows)}\n",
-        encoding="utf-8",
-    )
+    OUT.write_text(dump_json(doc), encoding="utf-8")
     print(f"wrote {OUT}: {len(locations)} locations ({len(battles)} battles, {len(challenges)} challenges), "
-          f"{len(items)} items ({len(pack_keys)} packs of {len(card_rows)} cards)")
+          f"{len(items)} items ({len(pack_keys)} packs of {len(card_rows)} cards), {len(bells)} storm bells "
+          f"({sum(b[1] for b in bells)} points)")
 
 
 if __name__ == "__main__":

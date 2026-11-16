@@ -1658,13 +1658,22 @@ namespace WildfrostArchipelago
         // Reverse Storm Bells: the True Final Boss comes on a no-bell run, not at 10+ storm points.
         // AddSecretCardsSystem (the True Final Boss path) is the threshold's one caller; it also turns
         // itself off when the run has no modifier list, which a run with no bells has none of.
+        // Forward seeds whose mod extensions leave too few storm bells for 10 points (PLAN.md §10) get a
+        // lower threshold from slot_data instead.
         [HarmonyPatch(typeof(StormBellManager), nameof(StormBellManager.TrueFinalBossPointThresholdReached))]
         private static class ReverseTrueFinalBoss
         {
             private static bool Prefix(ref bool __result)
             {
-                if (!ApMode.Active || !ApMode.ReverseBells) return true;
-                __result = NoBellRun();
+                if (!ApMode.Active) return true;
+                if (ApMode.ReverseBells)
+                {
+                    __result = NoBellRun();
+                    return false;
+                }
+                if (ApMode.TrueFinalPoints >= 10) return true;
+                __result = StormBellManager.GetCurrentStormPoints(StormBellManager.GetActiveStormBells()) >= ApMode.TrueFinalPoints
+                           || SaveSystem.LoadProgressData("stormPointOvercrank", false);
                 return false;
             }
 

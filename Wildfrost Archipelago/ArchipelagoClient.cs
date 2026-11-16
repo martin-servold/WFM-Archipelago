@@ -188,6 +188,7 @@ namespace WildfrostArchipelago
         private volatile bool gameSpeedUp;
         private volatile bool leaderReroll;
         private volatile bool noPossessedFinalBoss;
+        private volatile int trueFinalPoints = 10;
         private volatile bool newChallenges;
         private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
@@ -359,6 +360,9 @@ namespace WildfrostArchipelago
 
         /// <summary>slot_data "disable_possessed_final_boss": the Final Boss keeps its default deck (off in older seeds).</summary>
         public bool NoPossessedFinalBoss => noPossessedFinalBoss;
+        /// <summary>slot_data "true_final_points": the True Final Boss's storm point threshold, below vanilla's 10
+        /// when the seed's mod extensions remove too many storm bells (PLAN.md §10); 10 in older seeds.</summary>
+        public int TrueFinalPoints => trueFinalPoints;
         /// <summary>slot_data "new_challenges": the challenges made for Archipelago are checks (off in older seeds).</summary>
         public bool NewChallenges => newChallenges;
 
@@ -597,6 +601,7 @@ namespace WildfrostArchipelago
             gameSpeedUp = slotData.TryGetValue("game_speed_up", out object speedUp) && Convert.ToBoolean(speedUp);
             leaderReroll = slotData.TryGetValue("leader_reroll", out object reroll) && Convert.ToBoolean(reroll);
             noPossessedFinalBoss = slotData.TryGetValue("disable_possessed_final_boss", out object possessed) && Convert.ToBoolean(possessed);
+            trueFinalPoints = slotData.TryGetValue("true_final_points", out object finalPoints) ? Convert.ToInt32(finalPoints) : 10;
             newChallenges = slotData.TryGetValue("new_challenges", out object challenges) && Convert.ToBoolean(challenges);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);
