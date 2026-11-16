@@ -27,6 +27,7 @@ namespace WildfrostArchipelago
         public static void Run(ArchipelagoClient client)
         {
             var findings = new List<string>();
+            bool contentFound = false; // as opposed to only a shared patch
             var missing = SeedContentMissing(client);
 
             var others = Bootstrap.Mods
@@ -45,10 +46,12 @@ namespace WildfrostArchipelago
                 .Distinct()
                 .OrderBy(n => n)
                 .ToList();
+            contentFound |= unknownCards.Count > 0;
             if (unknownCards.Count > 0)
                 findings.Add($"{unknownCards.Count} cards in the reward pools aren't in this seed, so runs offer them from the start: {string.Join(", ", unknownCards)}");
 
-            var unknownTribes = tribes.Select(c => c.name).Where(n => !KnownTribes.Contains(n)).Distinct().ToList();
+            var unknownTribes = tribes.Select(c => c.name).Where(n => !KnownTribes.Contains(n) && !ApMode.SeedTribeClasses.Contains(n)).Distinct().ToList();
+            contentFound |= unknownTribes.Count > 0;
             if (unknownTribes.Count > 0)
                 findings.Add($"Tribes this seed doesn't know (playable, but their runs send no checks and don't count toward the goal): {string.Join(", ", unknownTribes)}");
 
@@ -58,6 +61,7 @@ namespace WildfrostArchipelago
                 .Where(p => p.Value != null && !knownPets.Contains(p.Key))
                 .Select(p => p.Key)
                 .ToList();
+            contentFound |= lockedPets.Count > 0;
             if (lockedPets.Count > 0)
                 findings.Add($"Pets this seed doesn't know, which stay locked: {string.Join(", ", lockedPets)}");
 
@@ -84,7 +88,8 @@ namespace WildfrostArchipelago
             if (missing.Count > 0)
                 ApUi.ShowToast("Mods", "This seed needs content the game doesn't have", "Details in the Archipelago log", ApUi.SentColor);
             else if (findings.Count > 0)
-                ApUi.ShowToast("Other mods", "Content this seed doesn't know about", "Details in the Archipelago log", ApUi.SentColor);
+                ApUi.ShowToast("Other mods", contentFound ? "Content this seed doesn't know about" : "Another mod patches the same game code",
+                    "Details in the Archipelago log", ApUi.SentColor);
         }
 
         /// <summary>

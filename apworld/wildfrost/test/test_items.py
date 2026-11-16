@@ -8,7 +8,7 @@ from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, storm_b
 from ..items import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED
 from ..locations import CLANS, included
 from ..rules import required_tribes
-from ..world import progression_direction
+from ..world import progression_direction, read_location_rules
 from . import WildfrostTestBase
 
 # The tools (gen_data.py, make_extension.py) write one pack row per 3 cards; generation just deals a
@@ -124,7 +124,7 @@ class TestGoalWinEachClan(WildfrostTestBase):
         names = {loc.name for loc in self.multiworld.get_locations(self.player)}
         self.assertNotIn("Challenge - Sunbringer", names)
         self.assertNotIn("Challenge - Sunbringer #2", names)
-        self.assertNotIn("challenge:Challenge Charm 16", json.loads(self.world.fill_slot_data()["location_rules"]))
+        self.assertNotIn("challenge:Challenge Charm 16", read_location_rules(self.world.fill_slot_data()["location_rules"]))
 
     def test_bell_levels_in_slot_data(self) -> None:
         # The client steps by 2 storm points with 11 levels, and keeps the old 7 steps without the key.
@@ -844,7 +844,7 @@ class TestLocationRulesForClient(BellTestBase):
     options = {**WildfrostTestBase.options, "goal": "true_final_boss", "force_storm_bells_up_to": 10}
 
     def check_matches(self) -> None:
-        rules = json.loads(self.world.fill_slot_data()["location_rules"])
+        rules = read_location_rules(self.world.fill_slot_data()["location_rules"])
         key_of = {name: key for key, name, _, _ in ITEMS}
         state = self.multiworld.state
         have = {key_of[name]: count for name, count in state.prog_items[self.player].items() if name in key_of}
@@ -888,7 +888,7 @@ class TestSecondChecks(BellTestBase):
         seconds = [name for _, name, _, info in LOCATIONS if info.get("second") and not info.get("spare")]
         # Every boss (18) and every challenge that unlocks a charm in vanilla (26); spares aren't in the seed.
         self.assertEqual(len(seconds), 44)
-        rules = json.loads(self.world.fill_slot_data()["location_rules"])
+        rules = read_location_rules(self.world.fill_slot_data()["location_rules"])
         key_of = {name: key for key, name, _, _ in LOCATIONS}
         for name in seconds:
             first = name.removesuffix(" #2")
@@ -1050,7 +1050,7 @@ class TestSlotDataDepth(WildfrostTestBase):
         packet = encode([{"cmd": "Connected", "team": 0, "slot": self.player, "players": [], "missing_locations": [],
                           "checked_locations": [], "slot_data": slot_data, "slot_info": {}, "hint_points": 0}])
         _check_depth(packet)  # raises ValueError("JSON document too complex")
-        self.assertTrue(json.loads(slot_data["location_rules"]))
+        self.assertTrue(read_location_rules(slot_data["location_rules"]))
 
 
 class TestSlotDataDepthReverse(TestSlotDataDepth):

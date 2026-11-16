@@ -1,3 +1,5 @@
+import base64
+import gzip
 import json
 import logging
 from collections.abc import Mapping
@@ -20,6 +22,13 @@ def force_points(slot_data: Mapping[str, Any]) -> int:
         return slot_data["force_storm_bells_up_to"]
     toggles = int(bool(slot_data.get("force_storm_bells"))) + int(bool(slot_data.get("force_overcrank")))
     return (0, 20, rules.OVERCRANK_POINTS)[toggles]
+
+
+def read_location_rules(value: str) -> dict:
+    """slot_data "location_rules" back as a dict: "gz:" + base64 of gzipped JSON, or (0.4.1) plain JSON."""
+    if value.startswith("gz:"):
+        value = gzip.decompress(base64.b64decode(value[3:])).decode("utf-8")
+    return json.loads(value)
 
 
 def chosen_extensions(names) -> set[str]:
@@ -94,6 +103,25 @@ class WildfrostWorld(World):
     # packs each extension group is held to when packs are made fuller.
     spare_checks: set[str] | None = None
     pack_limits: dict
+    # This slot's tribes by ClassData name: the vanilla three and its extensions' (the user's calls, 2026-11-16),
+    # and the starting one's item name.
+    tribes: tuple = locations.BASE_CLANS
+    starting_tribe_name: str = ""
+
+    def set_tribes(self) -> None:
+        self.tribes = tuple(tribe for tribe, info in content.TRIBES.items() if self.uses(info))
+
+    def choose_starting_tribe(self) -> None:
+        """Starting Tribe: a vanilla one, or with Any Tribe one of the slot's tribes, an extension's included."""
+        if self.options.starting_tribe == self.options.starting_tribe.option_any_tribe:
+            self.starting_tribe_name = locations.CLANS[self.random.choice(self.tribes)]
+        else:
+            self.starting_tribe_name = items.STARTING_TRIBES[self.options.starting_tribe.value]
+
+    def limit_clans_required(self) -> None:
+        """Goal Clans Required counts the slot's tribes; past them, it means every one."""
+        if self.options.clans_required.value > len(self.tribes):
+            self.options.clans_required.value = len(self.tribes)
 
     def set_bells(self) -> None:
         """This slot's storm bells, and the True Final Boss threshold they can reach (PLAN.md §10)."""
@@ -124,7 +152,11 @@ class WildfrostWorld(World):
         if slot_data:
             self.options.goal.value = slot_data["goal"]
             self.options.clans_required.value = slot_data.get("clans_required", 3)
-            self.options.starting_tribe.value = items.STARTING_TRIBES.index(slot_data["starting_tribe"])
+            # An extension's tribe (Any Tribe) isn't one of the three named choices.
+            started = slot_data["starting_tribe"]
+            self.options.starting_tribe.value = items.STARTING_TRIBES.index(started) \
+                if started in items.STARTING_TRIBES else self.options.starting_tribe.option_any_tribe
+            self.starting_tribe_name = started
             self.options.extra_storm_bells.value = slot_data.get("extra_storm_bells", 0)
             self.options.force_storm_bells_up_to.value = force_points(slot_data)
             self.options.progression_direction.value = progression_direction(slot_data)
@@ -134,11 +166,15 @@ class WildfrostWorld(World):
             self.pack_contents = slot_data["packs"]
             self.starting_pet = slot_data["starting_pet"]
             self.extensions = rebuilt_extensions(slot_data)
+            self.set_tribes()
             self.removed = self.removals()
             self.set_bells()
             self.spare_checks = set(slot_data.get("spare_checks", []))
         else:
             self.extensions = chosen_extensions(self.options.mod_content.value)
+            self.set_tribes()
+            self.choose_starting_tribe()
+            self.limit_clans_required()
             self.removed = self.removals()
             self.set_bells()
             self.pack_limits = {}
@@ -228,13 +264,21 @@ class WildfrostWorld(World):
             # Sent as one JSON string: Archipelago 0.6.8's Python clients (Universal Tracker, the Text
             # Client) drop any message nested over 16 deep (NetUtils._check_depth, AP PR #6378), and
             # the rules nest up to 15 inside slot_data. A string counts as no depth (found 2026-11-13).
-            "location_rules": json.dumps(self.location_rules, separators=(",", ":")),
+            # Gzipped and base64'd behind "gz:" (2026-11-16): with an extension's tribes every challenge lists
+            # each tribe's kit, and the rules grew to 830 KB of JSON (18 KB gzipped).
+            "location_rules": "gz:" + base64.b64encode(gzip.compress(
+                json.dumps(self.location_rules, separators=(",", ":")).encode("utf-8"), mtime=0)).decode("ascii"),
             # The extensions this seed uses (PLAN.md §10): the client checks their mods are loaded, and
             # Universal Tracker that the same files are installed.
             "extensions": [extensions.LOADED[mod].meta() for mod in sorted(self.extensions)],
             # The True Final Boss's storm point threshold: 10, or the most a slot's storm bells reach when its
             # extensions remove too many (the client moves the Lumin Vase to it).
             "true_final_points": self.true_final_points,
+            # This slot's tribes (the user's calls, 2026-11-16): ClassData name, item name, and for an extension's
+            # the vanilla clan whose pools it shares. The client locks each until its item arrives, counts its
+            # wins toward the goal, and its packs with the shared clan's.
+            "tribes": [{"class": tribe, "name": locations.CLANS[tribe], "shares": content.SHARES.get(tribe)}
+                       for tribe in self.tribes],
             # Spare "#2" checks added for room (locations.spare_checks), for Universal Tracker's rebuild.
             "spare_checks": sorted(self.spare_checks or ()),
         }

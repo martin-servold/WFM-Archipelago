@@ -37,8 +37,10 @@ Format 1:
     ],
     "Charm": [{"key": "charm:General:CardUpgradeBog", "name": "Bog Charm", "id": 106001, "clan": "General",
                "card": "card:CardUpgradeBog"}],
-    "Pet": [{"key": "pet:MyMod.Toadie", "name": "Toadie Pet", "id": 106002}]
+    "Pet": [{"key": "pet:MyMod.Toadie", "name": "Toadie Pet", "id": 106002}],
+    "Tribe": [{"key": "tribe:MyMod.Bogfolk", "name": "Bogfolk", "id": 106004, "shares": "Basic"}]
   },
+  "leaders": {"MyMod.Bogfolk": [{"key": "MyMod.BogKing", "applies": ["Shroom"], "traits": []}]},
   "ap_locations": {                     # Archipelago checks
     "battles": [                        # one per run tribe, and a spare "#2" each
       {"key": "battle:1:BogTrolls:Basic", "name": "Area 2 Battle - The Bog Trolls (Snowdwellers)", "id": 106000,
@@ -47,13 +49,22 @@ Format 1:
     "challenges": [
       {"key": "challenge:MyMod Challenge 1", "name": "Challenge - Kill 5 Trolls", "id": 106003,
        "text": "Kill 5 Trolls", "region": "Area 2", "rule": ["applies", "MyMod.Bog"], "excluded": false}
-    ]
+    ],
+    "twins": {"battle:0:Frenzy Boss:MyMod.Bogfolk": 106005},   # "#2" checks always in the seed (bosses)
+    "spares": {"challenge:MyMod Challenge 1": 106006}           # "#2" checks only when a seed needs room
   },
   "groups": {"shroom": ["TrollShroom"], "applies:Bog": ["TrollHammer", "CardUpgradeBog"]},
   "bells": [{"name": "MyMod.TrollBell", "points": 2}],
   "removes": {"cards": ["Egg"], "charms": ["CardUpgradeInk"], "battles": ["Mimiks"], "challenges": ["Challenge Charm 23"],
               "bells": ["9.MoreEnemiesInBossBattles"]}
 }
+
+Tribes (the user's calls, 2026-11-16): a "Tribe" item adds a playable tribe, by its ClassData name. Its
+runs draw from General, Snow, its "shares" clan (Basic, Magic or Clunk: the vanilla pools it also has) and
+its own cards, filed under its ClassData name like a clan's. It gets battle checks like a vanilla clan (the
+file lists them, run_tribe its ClassData; make_extension.py writes one per base battle, the bosses' "#2" as
+twins), and a Victory; a win with it counts toward Goal Clans Required. The client keeps it locked at tribe
+select until its item arrives. "leaders" lists its leaders' effects, for ["applies", ...].
 
 A mod's cards are dealt only into its own packs (the user's call, 2026-11-15), so it needs at least one
 pack for each clan and kind it has cards of, and no more packs than cards. A pack may list its cards
@@ -138,6 +149,8 @@ class Extension:
     groups: dict = field(default_factory=dict)      # group name -> card names
     removes: dict = field(default_factory=dict)     # REMOVE_KINDS -> base game names taken out
     bells: dict = field(default_factory=dict)       # its own storm bells: game name -> storm points
+    tribes: dict = field(default_factory=dict)      # its tribes: ClassData name -> the vanilla clan it shares pools with
+    leaders: dict = field(default_factory=dict)     # its tribes' leaders, as data.LEADERS
 
     def meta(self) -> dict:
         """What slot_data records of it."""
@@ -168,8 +181,11 @@ def _text(value, what: str) -> str:
     return value
 
 
-def check_rule(rule, what: str) -> None:
-    """Checks a rule's shape; which items and cards it names is checked once every file is read."""
+def check_rule(rule, what: str, clans: tuple = CLAN_NAMES) -> None:
+    """
+    Checks a rule's shape; which items and cards it names is checked once every file is read. clans: the
+    clans it may name (General and the vanilla three, and the extension's own tribes).
+    """
     if not isinstance(rule, list) or not rule or rule[0] not in RULE_FORMS:
         raise ExtensionError(f"{what}: a rule is a list starting with one of {', '.join(RULE_FORMS)}")
     form = rule[0]
@@ -177,14 +193,14 @@ def check_rule(rule, what: str) -> None:
         if len(rule) != 2 or not isinstance(rule[1], list) or not rule[1]:
             raise ExtensionError(f"{what}: [\"{form}\", [rule, ...]]")
         for child in rule[1]:
-            check_rule(child, what)
+            check_rule(child, what, clans)
     elif form == "has" and not (len(rule) == 3 and isinstance(rule[1], str) and isinstance(rule[2], int)):
         raise ExtensionError(f"{what}: [\"has\", item key, count]")
     elif form == "all" and not (len(rule) == 2 and isinstance(rule[1], list) and all(isinstance(k, str) for k in rule[1])):
         raise ExtensionError(f"{what}: [\"all\", [item key, ...]]")
     elif form == "any" and not (len(rule) == 3 and isinstance(rule[1], list) and isinstance(rule[2], int)):
         raise ExtensionError(f"{what}: [\"any\", [item key, ...], count]")
-    elif form == "packs" and not (len(rule) == 4 and rule[1] in CLAN_NAMES and rule[2] in ("Companion", "Item", "Charm", "")
+    elif form == "packs" and not (len(rule) == 4 and rule[1] in clans and rule[2] in ("Companion", "Item", "Charm", "")
                                   and isinstance(rule[3], int)):
         raise ExtensionError(f"{what}: [\"packs\", clan, Companion/Item/Charm/\"\", count]")
     elif form == "card" and not (len(rule) == 2 and isinstance(rule[1], str)):
@@ -192,7 +208,7 @@ def check_rule(rule, what: str) -> None:
     elif form == "two_of" and not (len(rule) == 2 and isinstance(rule[1], (str, list))):
         raise ExtensionError(f"{what}: [\"two_of\", group name or [card name, ...]]")
     elif form == "any_card" and not (len(rule) in (2, 3) and isinstance(rule[1], (str, list))
-                                     and (len(rule) == 2 or isinstance(rule[2], list) and set(rule[2]) <= set(CLAN_NAMES))):
+                                     and (len(rule) == 2 or isinstance(rule[2], list) and set(rule[2]) <= set(clans))):
         raise ExtensionError(f"{what}: [\"any_card\", group name or [card name, ...]] (and optionally [clan, ...])")
     elif form == "cards" and not (len(rule) == 2 and isinstance(rule[1], list) and rule[1]):
         raise ExtensionError(f"{what}: [\"cards\", [card name, ...]], cards together")
@@ -202,14 +218,14 @@ def check_rule(rule, what: str) -> None:
         raise ExtensionError(f"{what}: [\"trait\", trait name] (a card with it, or a clan whose leaders have it)")
     elif form == "clan_kit" and not (len(rule) == 2 and isinstance(rule[1], dict) and all(
             k in CLAN_KIT_KEYS and isinstance(v, CLAN_KIT_KEYS[k]) and not (CLAN_KIT_KEYS[k] is int and isinstance(v, bool))
-            for k, v in rule[1].items()) and rule[1].get("clan", "Basic") in CLAN_NAMES[1:]):
-        raise ExtensionError(f"{what}: [\"clan_kit\", {{...}}] takes {', '.join(CLAN_KIT_KEYS)} (clan: Basic/Magic/Clunk)")
+            for k, v in rule[1].items()) and rule[1].get("clan", "Basic") in clans[1:]):
+        raise ExtensionError(f"{what}: [\"clan_kit\", {{...}}] takes {', '.join(CLAN_KIT_KEYS)} (clan: Basic/Magic/Clunk or its tribe)")
     elif form == "applies" and not (len(rule) == 2 and isinstance(rule[1], str) and rule[1]):
         raise ExtensionError(f"{what}: [\"applies\", effect name] (a card that applies it, or a clan whose leaders do)")
     elif form == "battle" and not (len(rule) == 2 and isinstance(rule[1], str)):
         raise ExtensionError(f"{what}: [\"battle\", BattleData name]")
-    elif form == "tribe" and not (len(rule) == 2 and rule[1] in CLAN_NAMES[1:]):
-        raise ExtensionError(f"{what}: [\"tribe\", Basic/Magic/Clunk]")
+    elif form == "tribe" and not (len(rule) == 2 and rule[1] in clans[1:]):
+        raise ExtensionError(f"{what}: [\"tribe\", Basic/Magic/Clunk or one of its tribes]")
     elif form == "bell" and not (len(rule) == 2 and isinstance(rule[1], str)):
         raise ExtensionError(f"{what}: [\"bell\", storm bell name]")
 
@@ -238,6 +254,23 @@ def parse(path: str, raw: bytes) -> Extension:
             raise ExtensionError(f"{what} {value} is outside block {ext.id_block} ({low}-{high - 1})")
         return value
 
+    # Its tribes (the user's calls, 2026-11-16), read first: they're clans in the rest of the file.
+    ap_items = _require(doc.get("ap_items", {}), dict, "ap_items")
+    tribes: dict[str, str] = {}  # ClassData name -> the vanilla clan whose pools it shares
+    for i, item in enumerate(_require(ap_items.get("Tribe", []), list, "ap_items.Tribe")):
+        what = f"ap_items.Tribe[{i}]"
+        key = _text(item.get("key"), f"{what}.key")
+        tribe = key.removeprefix("tribe:")
+        if not key.startswith("tribe:") or not tribe or ":" in tribe or tribe in CLAN_NAMES or tribe in tribes:
+            raise ExtensionError(f"{what}: a tribe's key is 'tribe:<ClassData>', one per tribe, not a vanilla clan")
+        shares = item.get("shares")
+        if shares not in CLAN_NAMES[1:]:
+            raise ExtensionError(f"{what}.shares should be Basic, Magic or Clunk (the vanilla clan whose pools it draws from)")
+        tribes[tribe] = shares
+    ext.tribes = tribes
+    clans = (*CLAN_NAMES, *tribes)
+    run_tribes = (*CLAN_NAMES[1:], *tribes)
+
     # Its reward cards by kind (the user's layout, 2026-11-15). Charms are cards too (data.CARDS has them):
     # the client locks each card in its kind's reward pool.
     cards_by_kind = _require(doc.get("cards", {}), dict, "cards")
@@ -248,8 +281,8 @@ def parse(path: str, raw: bytes) -> Extension:
     for section, kind in CARD_SECTIONS.items():
         by_clan = _require(cards_by_kind.get(section, {}), dict, f"cards.{section}")
         for clan, entries in by_clan.items():
-            if clan not in CLAN_NAMES:
-                raise ExtensionError(f"cards.{section}.{clan}: clans are {', '.join(CLAN_NAMES)}")
+            if clan not in clans:
+                raise ExtensionError(f"cards.{section}.{clan}: clans are {', '.join(clans)}")
             for i, card in enumerate(_require(entries, list, f"cards.{section}.{clan}")):
                 what = f"cards.{section}.{clan}[{i}]"
                 key = _text(card.get("key"), f"{what}.key")
@@ -266,19 +299,20 @@ def parse(path: str, raw: bytes) -> Extension:
                 ext.cards.append((key, _text(card.get("name"), f"{what}.name"), info))
 
     fixed_cards: set[str] = set()
-    ap_items = _require(doc.get("ap_items", {}), dict, "ap_items")
     for kind in ap_items:
-        if kind not in ("Pack", "Charm", "Pet"):
-            raise ExtensionError(f"ap_items.{kind}: an extension's items are Pack, Charm or Pet")
+        if kind not in ("Pack", "Charm", "Pet", "Tribe"):
+            raise ExtensionError(f"ap_items.{kind}: an extension's items are Pack, Charm, Pet or Tribe")
     for kind, entries in ap_items.items():
         for i, item in enumerate(_require(entries, list, f"ap_items.{kind}")):
             what = f"ap_items.{kind}[{i}]"
             key, name = _text(item.get("key"), f"{what}.key"), _text(item.get("name"), f"{what}.name")
             item_id = in_block(item.get("id"), f"{what}.id")
             clan = item.get("clan")
-            if kind != "Pet" and clan not in CLAN_NAMES:
-                raise ExtensionError(f"{what}.clan should be one of {', '.join(CLAN_NAMES)}")
-            if kind == "Pet":
+            if kind not in ("Pet", "Tribe") and clan not in clans:
+                raise ExtensionError(f"{what}.clan should be one of {', '.join(clans)}")
+            if kind == "Tribe":
+                info = {"kind": "Tribe", "shares": item["shares"]}
+            elif kind == "Pet":
                 # A pet the mod adds: an item like ours, so the client keeps it locked until it arrives.
                 if not key.startswith("pet:"):
                     raise ExtensionError(f"{what}: a pet's key is 'pet:<CardData>'")
@@ -309,14 +343,14 @@ def parse(path: str, raw: bytes) -> Extension:
                                          "extension's cards of kind Charm")
                 info = {"kind": "Charm", "clan": clan, "card": card}
             else:
-                raise ExtensionError(f"{what}.kind should be Pack, Charm or Pet")
+                raise ExtensionError(f"{what}.kind should be Pack, Charm, Pet or Tribe")
             info["ext"] = ext.mod
             ext.items.append((key, name, item_id, info))
 
     ap_locations = _require(doc.get("ap_locations", {}), dict, "ap_locations")
     for section in ap_locations:
-        if section not in ("battles", "challenges", "spares"):
-            raise ExtensionError(f"ap_locations.{section}: ap_locations has battles, challenges and spares")
+        if section not in ("battles", "challenges", "twins", "spares"):
+            raise ExtensionError(f"ap_locations.{section}: ap_locations has battles, challenges, twins and spares")
     entries = [(f"ap_locations.{section}[{i}]", section, loc) for section in ("battles", "challenges")
                for i, loc in enumerate(_require(ap_locations.get(section, []), list, f"ap_locations.{section}"))]
     for what, section, loc in entries:
@@ -327,15 +361,20 @@ def parse(path: str, raw: bytes) -> Extension:
         if key.startswith("battle:"):
             parts = key.split(":")
             area, run_tribe = loc.get("area"), loc.get("run_tribe")
-            if len(parts) != 4 or area not in (0, 1, 2) or parts[1] != str(area) or run_tribe not in CLAN_NAMES[1:] \
+            if len(parts) != 4 or area not in (0, 1, 2) or parts[1] != str(area) or run_tribe not in run_tribes \
                     or parts[3] != run_tribe:
                 raise ExtensionError(f"{what}: a battle's key is 'battle:<area 0-2>:<BattleData>:<run tribe>', "
-                                     "matching its area and run_tribe")
+                                     "matching its area and run_tribe (Basic, Magic, Clunk or one of its tribes)")
             tribe = loc.get("tribe")
             if tribe not in (None, *CLAN_NAMES[1:]):
                 raise ExtensionError(f"{what}.tribe should be null or Basic/Magic/Clunk")
+            # "true_final": the True Final Boss fight, for a tribe's own row of it (its kit and bells, and only
+            # in seeds whose goal goes there); an extension's own battles never are.
+            true_final = _require(loc.get("true_final", False), bool, f"{what}.true_final")
+            if true_final and (parts[2] not in BASE_NAMES["battles"] or run_tribe not in tribes):
+                raise ExtensionError(f"{what}.true_final: only a tribe's own row of the base game's True Final Boss")
             info = {"area": area, "boss": _require(loc.get("boss", False), bool, f"{what}.boss"), "tribe": tribe,
-                    "run_tribe": run_tribe, "true_final": False, "tier": _require(loc.get("tier"), int, f"{what}.tier")}
+                    "run_tribe": run_tribe, "true_final": true_final, "tier": _require(loc.get("tier"), int, f"{what}.tier")}
         elif key.startswith("challenge:"):
             internal = key.removeprefix("challenge:")
             if internal.startswith("ap:"):
@@ -345,7 +384,7 @@ def parse(path: str, raw: bytes) -> Extension:
                 raise ExtensionError(f"{what}.region should be one of {', '.join(REGIONS)}")
             rule = loc.get("rule")
             if rule is not None:
-                check_rule(rule, f"{what}.rule")
+                check_rule(rule, f"{what}.rule", clans)
             info = {"internal": internal, "text": loc.get("text", name), "region": region, "rule": rule,
                     "excluded": _require(loc.get("excluded", False), bool, f"{what}.excluded")}
             # The True Final Boss fight itself, like our Sunbringer: its bells too, and filler only (or left
@@ -356,20 +395,39 @@ def parse(path: str, raw: bytes) -> Extension:
             raise ExtensionError(f"{what}.key should start with 'battle:' or 'challenge:'")
         info["ext"] = ext.mod
         ext.locations.append((key, name, loc_id, info))
-    # Spare "#2" checks, {original key: id}: only in a seed short of room (locations.spare_checks); each is
-    # its original with another ID (the user's call, 2026-11-16).
+    # "#2" checks, {original key: id}, each its original with another ID (the user's call, 2026-11-16):
+    # twins are always in the seed (a tribe's bosses, like ours), spares only in a seed short of room
+    # (locations.spare_checks).
     firsts = {key: (name, info) for key, name, _, info in ext.locations}
-    for key, loc_id in _require(ap_locations.get("spares", {}), dict, "ap_locations.spares").items():
-        if key not in firsts:
-            raise ExtensionError(f"ap_locations.spares: {key!r} isn't one of this extension's battles or challenges")
-        name, info = firsts[key]
-        ext.locations.append((key + "#2", name + " #2", in_block(loc_id, f"ap_locations.spares.{key}"),
-                              {**info, "second": True, "spare": True}))
+    for section, spare in (("twins", False), ("spares", True)):
+        for key, loc_id in _require(ap_locations.get(section, {}), dict, f"ap_locations.{section}").items():
+            if key not in firsts:
+                raise ExtensionError(f"ap_locations.{section}: {key!r} isn't one of this extension's battles or challenges")
+            name, info = firsts[key]
+            ext.locations.append((key + "#2", name + " #2", in_block(loc_id, f"ap_locations.{section}.{key}"),
+                                  {**info, "second": True, **({"spare": True} if spare else {})}))
+
+    # Its tribes' leaders and what they apply, for ["applies", ...] and ["trait", ...] (as the base file's).
+    for tribe, leaders in _require(doc.get("leaders", {}), dict, "leaders").items():
+        if tribe not in tribes:
+            raise ExtensionError(f"leaders.{tribe}: leaders are listed for this extension's own tribes")
+        rows = []
+        for i, leader in enumerate(_require(leaders, list, f"leaders.{tribe}")):
+            what = f"leaders.{tribe}[{i}]"
+            row = {"key": _text(leader.get("key"), f"{what}.key")}
+            for field in ("applies", "traits"):
+                names = _require(leader.get(field, []), list, f"{what}.{field}")
+                if not all(isinstance(a, str) and a for a in names):
+                    raise ExtensionError(f"{what}.{field} lists names")
+                if names:
+                    row[field] = list(names)
+            rows.append(row)
+        ext.leaders[tribe] = rows
 
     # Its cards go only into its own packs: each clan and kind it has cards of needs a pack, and no more
     # packs than cards (an empty pack would be an item that gives nothing).
     # Themed packs hold their own cards; the rest are dealt among the packs without a list.
-    for clan in CLAN_NAMES:
+    for clan in clans:
         for kind in CARD_KINDS:
             cards = sum(1 for key, _, info in ext.cards if info["clan"] == clan and info["kind"] == kind
                         and key not in fixed_cards)
@@ -428,7 +486,7 @@ def _check_against(ext: Extension, keys: set, names: set, item_ids: set, loc_ids
     own_cards = {key.removeprefix("card:") for key, _, _ in ext.cards}
     own_cards |= {info["card"].removeprefix("card:") for _, _, _, info in ext.items if info["kind"] == "Charm"}
     # A group lists its cards, and "tribe:<clan>" for clans whose leaders do it (the user's call, 2026-11-15).
-    tribes = {f"tribe:{clan}" for clan in CLAN_NAMES[1:]}
+    tribes = {f"tribe:{clan}" for clan in (*CLAN_NAMES[1:], *ext.tribes)}
     for group, cards in ext.groups.items():
         unknown = [c for c in cards if c not in own_cards and c not in tribes]
         if unknown:

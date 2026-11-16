@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
 
-from .content import CARDS, ITEMS, LOCATIONS
-from .data import LEADERS, LOGIC
+from .content import CARDS, ITEMS, LEADERS, LOCATIONS, SHARES
+from .data import LOGIC
 from .groups import GROUPS
 from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS
-from .locations import CLANS, VICTORY_ITEM, included, victory_location
+from .locations import BASE_CLANS, CLANS, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
@@ -65,8 +65,12 @@ PACK_KINDS = ("Companion", "Item", "Charm")
 
 
 def clan_packs(clan: str, kind: str) -> list[str]:
-    """What a run of this clan draws from (General and its own): packs of a kind, or (Charm) charms."""
-    return [name for _, name, _, info in ITEMS if info.get("clan") in ("General", clan) and
+    """
+    What a run of this clan draws from (General and its own, and for an extension's tribe the vanilla clan
+    whose pools it shares): packs of a kind, or (Charm) charms.
+    """
+    pools = ("General", clan, SHARES[clan]) if clan in SHARES else ("General", clan)
+    return [name for _, name, _, info in ITEMS if info.get("clan") in pools and
             (info["kind"] == "Charm" if kind == "Charm" else info["kind"] == "Pack" and info["card_kind"] == kind)]
 
 
@@ -226,9 +230,9 @@ def battle_kit(info: dict, extra: int, tf_bells: int = TRUE_FINAL_BELLS):
     return final_boss_kit(info["run_tribe"], extra) if info["tier"] >= CARDS_FROM_TIER else None
 
 
-def any_clan(kit):
-    """A challenge any clan can do, with that clan's tribe item."""
-    return Or(*(both(tribe_rule({clan}), kit(clan)) for clan in CLANS))
+def any_clan(kit, clans=BASE_CLANS):
+    """A challenge any clan (of the slot's tribes, WildfrostWorld.tribes) can do, with that clan's tribe item."""
+    return Or(*(both(tribe_rule({clan}), kit(clan)) for clan in clans))
 
 
 def battle_rule(key: str, info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS):
@@ -262,34 +266,35 @@ def area_kit(region: str, clan: str, extra: int, tf_bells: int = TRUE_FINAL_BELL
     return kit_with_bells(name, clan, extra, tf_bells if true_final else 0)
 
 
-def challenge_kit(info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS):
+def challenge_kit(info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS,
+                  clans=BASE_CLANS):
     """
     A challenge's area kit, any clan: Area 3 and 4 always (area_kit), unless its rule takes it for a set
     clan. Its own needs (cards, packs, tribes) are its rule (CardRules.extension_rule).
     """
     if reversed_bells:
-        return reverse_challenge_kit(info)
+        return reverse_challenge_kit(info, clans)
     region = challenge_region(info)
     if region not in ("Area 3", "Area 4") or uses_area_kit(info):
         return None
-    return any_clan(lambda clan: area_kit(region, clan, extra, tf_bells, bool(info.get("true_final"))))
+    return any_clan(lambda clan: area_kit(region, clan, extra, tf_bells, bool(info.get("true_final"))), clans)
 
 
-def reverse_challenge_kit(info: dict):
+def reverse_challenge_kit(info: dict, clans=BASE_CLANS):
     """
     Reverse Storm Bells: the normal pack needs (without the forced extra), plus getting as far as
     the challenge's area at the run's bells. The win challenges take the Area 3 stretch.
     """
     if info.get("true_final"):
-        return any_clan(reverse_true_final_kit)
-    base = challenge_kit(info, 0)
+        return any_clan(reverse_true_final_kit, clans)
+    base = challenge_kit(info, 0, clans=clans)
     region = challenge_region(info)
     if region == "Area 1":
         return base
     stretch = "Area 3" if region in ("Area 3", "Area 4") else "Area 2"
     tribes = sorted(rule_tribes(info.get("rule")))
     clan = tribes[0] if len(tribes) == 1 else None
-    reach = reverse_kit(clan, stretch) if clan else any_clan(lambda c: reverse_kit(c, stretch))
+    reach = reverse_kit(clan, stretch) if clan else any_clan(lambda c: reverse_kit(c, stretch), clans)
     return both(base, reach)
 
 
@@ -325,6 +330,7 @@ class CardRules:
     def __init__(self, world: WildfrostWorld):
         pack_names = {key: name for key, name, _, _ in ITEMS}
         self.world = world
+        self.clans = tuple(getattr(world, "tribes", BASE_CLANS))
         self.extra = forced_extra(world)
         self.reversed = reverse(world)
         self.pack_of = {card.removeprefix("card:"): pack_names[pack]
@@ -360,17 +366,31 @@ class CardRules:
             raise Impossible(bell)
         return None if self.reversed else Has(STORM_BELL, max(1, -(-points // 2)))
 
+    def drawn_by(self, clans) -> Rule | None:
+        """
+        A run that can be offered cards of these clans: for each, its tribe or one of the slot's extension
+        tribes that shares its pools (the user's call, 2026-11-16: Terraria Aliens draws Clunkmaster cards).
+        General cards need no tribe.
+        """
+        parts = []
+        for clan in sorted(c for c in clans if c in CLANS):
+            runners = [t for t in self.clans if t == clan or SHARES.get(t) == clan]
+            if not runners:
+                raise Impossible(f"tribe {clan}")
+            parts.append(Or(*(tribe_rule({t}) for t in runners)) if len(runners) > 1 else tribe_rule({runners[0]}))
+        return both(*parts)
+
     def card(self, card: str):
         if card not in self.pack_of:
             raise Impossible(card)
-        return both(tribe_rule({CLAN_OF_CARD[card]}), Has(self.pack_of[card]))
+        return both(self.drawn_by({CLAN_OF_CARD[card]}), Has(self.pack_of[card]))
 
     def members(self, cards, clans=None) -> list:
         """
         A group's members this seed: its cards with a pack (removed ones and those from an extension this
         slot didn't pick are skipped) and its tribes ("tribe:<clan>": a clan whose leaders do it).
         """
-        return [c for c in cards if c.startswith("tribe:") and c[6:] in CLANS
+        return [c for c in cards if c.startswith("tribe:") and c[6:] in self.clans
                 or c in self.pack_of and (clans is None or CLAN_OF_CARD[c] in clans)]
 
     def member(self, member: str):
@@ -387,7 +407,7 @@ class CardRules:
         missing = [c for c in cards if c not in self.pack_of]
         if missing:
             raise Impossible(", ".join(missing))
-        tribes = tribe_rule({CLAN_OF_CARD[c] for c in cards})
+        tribes = self.drawn_by({CLAN_OF_CARD[c] for c in cards})
         packs = sorted({self.pack_of[c] for c in cards})
         return both(tribes, HasAll(*packs) if len(packs) > 1 else Has(packs[0]))
 
@@ -433,6 +453,8 @@ class CardRules:
             pool = clan_packs(clan, "Companion") + clan_packs(clan, "Item") if kind == "" else clan_packs(clan, kind)
             return HasFromList(*pool, count=count)
         if form == "tribe":
+            if rule[1] not in self.clans:
+                raise Impossible(f"tribe {rule[1]}")
             return tribe_rule({rule[1]})
         if form == "cards":  # these cards together
             return self.all_of(*rule[1])
@@ -462,7 +484,7 @@ class CardRules:
         """
         cards = [key[5:] for key, _, info in CARDS if effect in info.get(field, ())]
         tribes = [f"tribe:{clan}" for clan, leaders in LEADERS.items()
-                  if clan in CLANS and any(effect in leader.get(field, ()) for leader in leaders)]
+                  if clan in self.clans and any(effect in leader.get(field, ()) for leader in leaders)]
         return self.any_of(tribes + cards)
 
     def clan_kit(self, spec: dict, region: str):
@@ -480,7 +502,9 @@ class CardRules:
                      area_kit(region, clan, self.extra, self.world.true_final_bells) if spec.get("area_kit") else None]
             return both(*parts)
         clan = spec.get("clan")
-        return both(tribe_rule({clan}), kit(clan)) if clan else any_clan(kit)
+        if clan and clan not in self.clans:
+            raise Impossible(f"tribe {clan}")
+        return both(tribe_rule({clan}), kit(clan)) if clan else any_clan(kit, self.clans)
 
     def battle_alternatives(self, battle: str) -> list:
         """Winning that battle (BattleData name), with any run tribe it's a check for, unless it was removed."""
@@ -552,12 +576,12 @@ def set_all_rules(world: WildfrostWorld) -> None:
         else:
             # A challenge's own needs: its row's rule, ours and extensions' alike (PLAN.md §10).
             needs = cards.extension_rule(info["rule"], challenge_region(info)) if info.get("rule") else None
-            rule = both(challenge_kit(info, extra, reversed_bells, world.true_final_bells), needs)
+            rule = both(challenge_kit(info, extra, reversed_bells, world.true_final_bells, world.tribes), needs)
         if rule is not None:
             world.set_rule(world.get_location(name), rule)
             world.location_rules[key] = rule_json(rule)
 
-    for clan in CLANS:
+    for clan in world.tribes:
         win = reverse_true_final_kit(clan) if reversed_bells else goal_kit(world, clan, extra)
         world.set_rule(world.get_location(victory_location(clan)), both(tribe_rule({clan}), win))
 

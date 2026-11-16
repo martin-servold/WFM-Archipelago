@@ -1,0 +1,92 @@
+{
+  "format": 1,
+  "mod": "TribeMod",
+  "guid": "test.wildfrost.tribemod",
+  "version": "1.0.0",
+  "id_block": 9,
+  "cards": {
+    "companions": {
+      "TribeMod.Bogfolk": [
+        {"key": "card:TribeMod.Bog1", "name": "Bog Companion 1", "applies": ["Shroom"]},
+        {"key": "card:TribeMod.Bog2", "name": "Bog Companion 2"},
+        {"key": "card:TribeMod.Bog3", "name": "Bog Companion 3"},
+        {"key": "card:TribeMod.Bog4", "name": "Bog Companion 4"},
+        {"key": "card:TribeMod.Bog5", "name": "Bog Companion 5"},
+        {"key": "card:TribeMod.Bog6", "name": "Bog Companion 6"}
+      ]
+    },
+    "items": {
+      "TribeMod.Bogfolk": [
+        {"key": "card:TribeMod.BogItem1", "name": "Bog Item 1"},
+        {"key": "card:TribeMod.BogItem2", "name": "Bog Item 2"},
+        {"key": "card:TribeMod.BogItem3", "name": "Bog Item 3"},
+        {"key": "card:TribeMod.BogItem4", "name": "Bog Item 4"},
+        {"key": "card:TribeMod.BogItem5", "name": "Bog Item 5"},
+        {"key": "card:TribeMod.BogItem6", "name": "Bog Item 6"}
+      ]
+    },
+    "charms": {
+      "TribeMod.Bogfolk": [
+        {"key": "card:TribeMod.CardUpgradeBog", "name": "Bog Charm"}
+      ]
+    }
+  },
+  "ap_items": {
+    "Tribe": [
+      {"key": "tribe:TribeMod.Bogfolk", "name": "Bogfolk", "id": 118000, "shares": "Basic"}
+    ],
+    "Pack": [
+      {"key": "pack:TribeMod.Bogfolk:Companion:TribeMod-1", "name": "TribeMod Bogfolk Companion Pack 1", "id": 118001, "clan": "TribeMod.Bogfolk", "card_kind": "Companion"},
+      {"key": "pack:TribeMod.Bogfolk:Companion:TribeMod-2", "name": "TribeMod Bogfolk Companion Pack 2", "id": 118002, "clan": "TribeMod.Bogfolk", "card_kind": "Companion"},
+      {"key": "pack:TribeMod.Bogfolk:Item:TribeMod-1", "name": "TribeMod Bogfolk Item Pack 1", "id": 118003, "clan": "TribeMod.Bogfolk", "card_kind": "Item"},
+      {"key": "pack:TribeMod.Bogfolk:Item:TribeMod-2", "name": "TribeMod Bogfolk Item Pack 2", "id": 118004, "clan": "TribeMod.Bogfolk", "card_kind": "Item"}
+    ],
+    "Charm": [
+      {"key": "charm:TribeMod.Bogfolk:TribeMod.CardUpgradeBog", "name": "Bog Charm", "id": 118005, "clan": "TribeMod.Bogfolk", "card": "card:TribeMod.CardUpgradeBog"}
+    ]
+  },
+  "leaders": {
+    "TribeMod.Bogfolk": [
+      {"key": "TribeMod.BogKing", "applies": ["TribeMod.Bog"], "traits": ["Smackback"]}
+    ]
+  },
+  "ap_locations": {
+    "battles": [
+      {"key": "battle:0:Snowbos:TribeMod.Bogfolk", "name": "Area 1 Battle - The Snowbo Squad (Bogfolk)", "id": 118000, "area": 0, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 0},
+      {"key": "battle:0:Pengoons:TribeMod.Bogfolk", "name": "Area 1 Battle - The Pengoons (Bogfolk)", "id": 118001, "area": 0, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 0},
+      {"key": "battle:0:BabyBerries:TribeMod.Bogfolk", "name": "Area 1 Battle - The Bog Berries (Bogfolk)", "id": 118002, "area": 0, "boss": false, "tribe": "Clunk", "run_tribe": "TribeMod.Bogfolk", "tier": 0},
+      {"key": "battle:0:Bombers:TribeMod.Bogfolk", "name": "Area 1 Battle - The Snow Lumps (Bogfolk)", "id": 118003, "area": 0, "boss": false, "tribe": "Magic", "run_tribe": "TribeMod.Bogfolk", "tier": 0},
+      {"key": "battle:0:Yeti:TribeMod.Bogfolk", "name": "Area 1 Battle - The Snowland Bears (Bogfolk)", "id": 118004, "area": 0, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 1},
+      {"key": "battle:0:Shroomers:TribeMod.Bogfolk", "name": "Area 1 Battle - The Noxious Shrooms (Bogfolk)", "id": 118005, "area": 0, "boss": false, "tribe": "Magic", "run_tribe": "TribeMod.Bogfolk", "tier": 1},
+      {"key": "battle:0:Berries:TribeMod.Bogfolk", "name": "Area 1 Battle - The Globerries (Bogfolk)", "id": 118006, "area": 0, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 1},
+      {"key": "battle:0:Frosters:TribeMod.Bogfolk", "name": "Area 1 Battle - The Frost Shades (Bogfolk)", "id": 118007, "area": 0, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 1},
+      {"key": "battle:0:Split Boss:TribeMod.Bogfolk", "name": "Area 1 Boss - Bamboozle (Bogfolk)", "id": 118008, "area": 0, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 2},
+      {"key": "battle:0:Frenzy Boss:TribeMod.Bogfolk", "name": "Area 1 Boss - Infernoko (Bogfolk)", "id": 118009, "area": 0, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 2},
+      {"key": "battle:1:Spice Monkeys:TribeMod.Bogfolk", "name": "Area 2 Battle - The Spice Mokos (Bogfolk)", "id": 118010, "area": 1, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 3},
+      {"key": "battle:1:Goats:TribeMod.Bogfolk", "name": "Area 2 Battle - The Demonhorn Goats (Bogfolk)", "id": 118011, "area": 1, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 3},
+      {"key": "battle:1:Husks:TribeMod.Bogfolk", "name": "Area 2 Battle - The Shelled Husks (Bogfolk)", "id": 118012, "area": 1, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 3},
+      {"key": "battle:1:Drek:TribeMod.Bogfolk", "name": "Area 2 Battle - The Woolly Drek (Bogfolk)", "id": 118013, "area": 1, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 4},
+      {"key": "battle:1:Spikers:TribeMod.Bogfolk", "name": "Area 2 Battle - The Toothy Shades (Bogfolk)", "id": 118014, "area": 1, "boss": false, "tribe": "Magic", "run_tribe": "TribeMod.Bogfolk", "tier": 4},
+      {"key": "battle:1:Inkers:TribeMod.Bogfolk", "name": "Area 2 Battle - The Ink Sacks (Bogfolk)", "id": 118015, "area": 1, "boss": false, "tribe": "Clunk", "run_tribe": "TribeMod.Bogfolk", "tier": 4},
+      {"key": "battle:1:Toadstool Boss:TribeMod.Bogfolk", "name": "Area 2 Boss - Truffle (Bogfolk)", "id": 118016, "area": 1, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 5},
+      {"key": "battle:1:Clunker Boss:TribeMod.Bogfolk", "name": "Area 2 Boss - Krunker (Bogfolk)", "id": 118017, "area": 1, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 5},
+      {"key": "battle:2:Blockers:TribeMod.Bogfolk", "name": "Area 3 Battle - The Ice Krabs (Bogfolk)", "id": 118018, "area": 2, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 6},
+      {"key": "battle:2:Wildlings:TribeMod.Bogfolk", "name": "Area 3 Battle - The Wild Hogs (Bogfolk)", "id": 118019, "area": 2, "boss": false, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 6},
+      {"key": "battle:2:Mimiks:TribeMod.Bogfolk", "name": "Area 3 Battle - The Gunk Bugs (Bogfolk)", "id": 118020, "area": 2, "boss": false, "tribe": "Clunk", "run_tribe": "TribeMod.Bogfolk", "tier": 6},
+      {"key": "battle:2:Final Boss:TribeMod.Bogfolk", "name": "Area 3 Boss - Final Boss (Bogfolk)", "id": 118021, "area": 2, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "tier": 7},
+      {"key": "battle:2:Final Final Boss:TribeMod.Bogfolk", "name": "Area 3 Boss - True Final Boss (Bogfolk)", "id": 118022, "area": 2, "boss": true, "tribe": null, "run_tribe": "TribeMod.Bogfolk", "true_final": true, "tier": 8}
+    ],
+    "twins": {
+      "battle:0:Split Boss:TribeMod.Bogfolk": 118023,
+      "battle:0:Frenzy Boss:TribeMod.Bogfolk": 118024,
+      "battle:1:Toadstool Boss:TribeMod.Bogfolk": 118025,
+      "battle:1:Clunker Boss:TribeMod.Bogfolk": 118026,
+      "battle:2:Final Boss:TribeMod.Bogfolk": 118027,
+      "battle:2:Final Final Boss:TribeMod.Bogfolk": 118028
+    },
+    "challenges": [
+      {"key": "challenge:TribeMod Challenge 1", "name": "Challenge - Win as Bogfolk", "id": 118029, "text": "Win a run with the Bogfolk", "region": "Area 3", "rule": ["clan_kit", {"clan": "TribeMod.Bogfolk", "area_kit": true}]},
+      {"key": "challenge:TribeMod Challenge 2", "name": "Challenge - Apply 20 Bog", "id": 118030, "text": "Apply 20 Bog", "region": "Area 1", "rule": ["applies", "TribeMod.Bog"]}
+    ]
+  }
+}

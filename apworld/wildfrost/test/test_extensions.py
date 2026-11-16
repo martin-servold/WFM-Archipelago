@@ -84,7 +84,7 @@ class TestExtensionFile(unittest.TestCase):
         self.assert_refused({**sample(), "cards": {"items": {"Pirates": []}}}, "clans are General, Basic, Magic, Clunk")
 
     def test_items_by_kind(self) -> None:
-        self.assert_refused({**sample(), "ap_items": {"Tribe": []}}, "an extension's items are Pack, Charm or Pet")
+        self.assert_refused({**sample(), "ap_items": {"Event": []}}, "an extension's items are Pack, Charm, Pet or Tribe")
 
     def test_new_challenges_keys_are_ours(self) -> None:
         doc = sample()
@@ -119,7 +119,7 @@ class TestExtensionGeneration(unittest.TestCase):
         cls.out = json.loads(lines[-1].removeprefix("RESULT "))
 
     def test_loaded(self) -> None:
-        self.assertEqual(self.out["loaded"], ["BellMod", "OverflowMod", "RemoverMod", "SampleMod"])
+        self.assertEqual(self.out["loaded"], ["BellMod", "OverflowMod", "RemoverMod", "SampleMod", "TribeMod"])
         self.assertEqual(self.out["failed"], {})
 
     def test_slot_with_the_mod(self) -> None:
@@ -160,6 +160,41 @@ class TestExtensionGeneration(unittest.TestCase):
         self.assertTrue(got["pool_fits"])
         self.assertTrue(got["beatable"])
         self.assertEqual(len(self.out["without"]["kept"]), 3)
+
+    def test_tribe(self) -> None:
+        """An extension's tribe (the user's calls, 2026-11-16): an item, full battle checks, a Victory that counts."""
+        got = self.out["tribe"]
+        self.assertEqual(got["tribes"][-1], {"class": "TribeMod.Bogfolk", "name": "Bogfolk", "shares": "Basic"})
+        self.assertEqual(got["clans_required"], 4)
+        self.assertEqual(got["victories"], ["Victory (Bogfolk)", "Victory (Clunkmasters)", "Victory (Shademancers)",
+                                            "Victory (Snowdwellers)"])
+        # 22 battles and its Victory, 5 bosses' "#2": a Final Boss goal seed has no True Final Boss checks.
+        self.assertEqual((got["battles"], got["twins"], got["tribe_item"]), (23, 5, 1))
+        # Its runs draw from General, Snowdweller (shared) and its own packs: the client's ["packs", tribe, ...].
+        self.assertIn('["all", ["tribe:TribeMod.Bogfolk"]]', json.dumps(got["boss_rule"]))
+        self.assertIn('["packs", "TribeMod.Bogfolk", "Companion", 1]', json.dumps(got["boss_rule"]))
+        self.assertEqual(got["win_challenge"], got["boss_rule"])
+        self.assertEqual(got["bog_rule"], ["has", "tribe:TribeMod.Bogfolk", 1])  # its leader applies Bog
+        # Snowdweller cards in logic with either tribe that draws from the Snowdweller pools.
+        self.assertIn('["or", [["all", ["tribe:Basic"]], ["all", ["tribe:TribeMod.Bogfolk"]]]]', got["shell_rule"])
+        # Its True Final Boss: left out of a Final Boss goal seed, and with the bells where it's in.
+        self.assertFalse(got["true_final_battle"])
+        self.assertIn('["has", "storm_bell", 5]', got["true_final_rule"])
+        self.assertTrue(got["beatable"])
+        self.assertTrue(got["pool_fits"])
+        self.assertEqual(self.out["tribe_without"], {"clans_required": 3, "tribes": ["Basic", "Magic", "Clunk"],
+                                                     "bogfolk": False})
+        self.assertIn("Bogfolk", self.out["any_tribe_starts"])
+
+    def test_tribe_file_checks(self) -> None:
+        doc = json.loads((HERE / "extensions" / "TribeMod.wildfrost.json").read_text())
+        doc["ap_items"]["Tribe"][0]["shares"] = "General"
+        with self.assertRaises(ExtensionError):
+            parsed(doc)
+        doc["ap_items"]["Tribe"][0]["shares"] = "Basic"
+        doc["leaders"] = {"Basic": []}
+        with self.assertRaises(ExtensionError):
+            parsed(doc)
 
     def test_storm_bells(self) -> None:
         got = self.out["bellmod"]

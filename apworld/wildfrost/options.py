@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 
 from Options import Choice, DeathLink, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range, Toggle
@@ -30,25 +31,38 @@ class Goal(Choice):
 class ClansRequired(Range):
     """
     How many clans need the Goal's win, each with a run of its own, to finish the seed. Fewer makes the stretch from
-    getting every Storm Bell to the end shorter.
+    getting every Storm Bell to the end shorter. Tribes from Mod Content count too; more than the seed has tribes
+    (3 without any) means every one.
     """
 
     display_name = "Goal Clans Required"
     range_start = 1
-    range_end = 3
+    # Tribes from extensions count (the user's call, 2026-11-16), so the top is past the vanilla three;
+    # generate_early holds it to the slot's tribes.
+    range_end = 30
     default = 1
 
 
 class StartingTribe(Choice):
     """
-    The tribe you can play from the start. The other two tribes are items in the multiworld.
+    The tribe you can play from the start. The other tribes are items in the multiworld.
+    Random: one of the three vanilla tribes. Any Tribe: one of every tribe in the seed, Mod Content's included.
     """
 
     display_name = "Starting Tribe"
     option_snowdwellers = 0
     option_shademancers = 1
     option_clunkmasters = 2
+    # Random among the seed's tribes, an extension's included (the user's call, 2026-11-16).
+    option_any_tribe = 3
     default = "random"
+
+    @classmethod
+    def from_text(cls, text: str):
+        # "random" keeps to the vanilla three, as before Any Tribe (which it would otherwise pick among).
+        if text.lower() == "random":
+            return cls(random.choice((cls.option_snowdwellers, cls.option_shademancers, cls.option_clunkmasters)))
+        return super().from_text(text)
 
 
 class ExtraStormBells(Range):

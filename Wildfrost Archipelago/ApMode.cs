@@ -118,6 +118,12 @@ namespace WildfrostArchipelago
             snowdwellersIsItem = client.SnowdwellersIsItem;
             cardKinds = client.CardKinds ?? new Dictionary<string, string>();
             packs = client.Packs ?? new Dictionary<string, List<string>>();
+            // The seed's tribes (slot_data "tribes"); older seeds have the vanilla three.
+            var tribes = client.SeedTribes;
+            clanNames = tribes == null ? new Dictionary<string, string>(VanillaClanNames)
+                : tribes.Where(t => t.Class != null).ToDictionary(t => t.Class, t => t.Name ?? t.Class);
+            tribeShares = tribes == null ? new Dictionary<string, string>()
+                : tribes.Where(t => t.Class != null && t.Shares != null).ToDictionary(t => t.Class, t => t.Shares);
             grantedUnlocks = null;
             if (Profile == null)
             {
@@ -463,7 +469,9 @@ namespace WildfrostArchipelago
         public static int PackCount(string clan, string kind) => received.Count(key =>
         {
             string[] parts = key.Split(':');
-            if (parts.Length < 3 || parts[1] != "General" && parts[1] != clan) return false;
+            // An extension's tribe also draws from the vanilla clan whose pools it shares.
+            bool shared = tribeShares.TryGetValue(clan, out string shares) && parts.Length >= 3 && parts[1] == shares;
+            if (parts.Length < 3 || parts[1] != "General" && parts[1] != clan && !shared) return false;
             if (parts[0] == "charm") return kind == "Charm";
             return parts[0] == "pack" && (kind == "" || parts[2] == kind);
         });
@@ -484,19 +492,30 @@ namespace WildfrostArchipelago
         // --- Goal ---
         // A qualifying win per clan, saved in the AP profile so it survives restarts.
         private const string GoalClansKey = "apGoalClans";
-        private static readonly Dictionary<string, string> ClanNames = new Dictionary<string, string>
+        private static readonly Dictionary<string, string> VanillaClanNames = new Dictionary<string, string>
         {
             { "Basic", "Snowdwellers" },
             { "Magic", "Shademancers" },
             { "Clunk", "Clunkmasters" },
         };
+        // This seed's tribes by ClassData name: the vanilla three and its extensions' (slot_data "tribes"; a win
+        // with any of them counts toward the goal, the user's call 2026-11-16), and the vanilla clan whose pools
+        // each extension tribe shares.
+        private static Dictionary<string, string> clanNames = new Dictionary<string, string>(VanillaClanNames);
+        private static Dictionary<string, string> tribeShares = new Dictionary<string, string>();
+
+        /// <summary>Pack groups for the tracker: General, then each of the seed's tribes.</summary>
+        public static IEnumerable<string> PackClans => new[] { "General" }.Concat(clanNames.Keys);
+
+        /// <summary>The seed's tribes by ClassData name.</summary>
+        public static IEnumerable<string> SeedTribeClasses => clanNames.Keys;
         private static readonly string[] GoalText =
         {
             "win a run", "beat the True Final Boss", "beat the True Final Boss Overcranked",
         };
 
         private static string GoalDescription =>
-            GoalText[System.Math.Min(goal, 2)] + (clansRequired >= ClanNames.Count ? " with each clan" : $" with {clansRequired} of the {ClanNames.Count} clans");
+            GoalText[System.Math.Min(goal, 2)] + (clansRequired >= clanNames.Count ? " with each clan" : $" with {clansRequired} of the {clanNames.Count} clans");
 
         /// <summary>A won run (AP profile). trueWin: the True Final Boss was beaten.</summary>
         public static void RunWon(string clan, bool trueWin, bool overcranked)
@@ -509,7 +528,7 @@ namespace WildfrostArchipelago
                 done.Add(clan);
                 SaveSystem.SaveProgressData(GoalClansKey, done);
             }
-            string clans = string.Join(", ", done.Select(c => ClanNames.TryGetValue(c, out string n) ? n : c));
+            string clans = string.Join(", ", done.Select(c => clanNames.TryGetValue(c, out string n) ? n : c));
             client?.Log(counts
                 ? $"Goal ({GoalDescription}): {System.Math.Min(done.Count, clansRequired)}/{clansRequired} [{clans}]"
                 : $"This win doesn't count for the goal ({GoalDescription})");
@@ -521,7 +540,7 @@ namespace WildfrostArchipelago
         private static void CheckGoal(ArchipelagoClient client, bool quiet = false)
         {
             var done = SaveSystem.LoadProgressData(GoalClansKey, new List<string>());
-            if (ClanNames.Keys.Count(done.Contains) >= clansRequired) client.SendGoal(quiet);
+            if (clanNames.Keys.Count(done.Contains) >= clansRequired) client.SendGoal(quiet);
         }
 
         // Challenges are unchained: ChallengeSystem.OnEnable only activates challenges whose
@@ -566,8 +585,11 @@ namespace WildfrostArchipelago
                 .Select(p => p.Key.Substring("card:".Length))
                 .ToList();
 
+        // An extension's tribe has no game unlock to reuse, so tribe select hides it (GetLockedClasses) until its
+        // item arrives (the user's call, 2026-11-16).
         public static bool TribeLocked(string className) =>
-            (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic") && !received.Contains("tribe:" + className);
+            (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic" || tribeShares.ContainsKey(className))
+            && !received.Contains("tribe:" + className);
 
         /// <summary>Null when the lock isn't one of the tribe locks (then vanilla decides).</summary>
         public static bool? BattleLocked(string challengeName) =>

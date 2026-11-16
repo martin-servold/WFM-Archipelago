@@ -136,12 +136,13 @@ def fill_packs(world: WildfrostWorld) -> dict[str, list[str]]:
     return packs
 
 
-# starting_tribe values, in option order.
+# starting_tribe values, in option order (then Any Tribe: WildfrostWorld.choose_starting_tribe).
 STARTING_TRIBES = ["Snowdwellers", "Shademancers", "Clunkmasters"]
 
 
 def starting_tribe(world: WildfrostWorld) -> str:
-    return STARTING_TRIBES[world.options.starting_tribe.value]
+    """The starting tribe's item name."""
+    return getattr(world, "starting_tribe_name", None) or STARTING_TRIBES[world.options.starting_tribe.value]
 
 
 PET_NAMES = [name for name, kind in KIND_BY_NAME.items() if kind == "Pet"]

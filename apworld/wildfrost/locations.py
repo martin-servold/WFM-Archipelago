@@ -6,7 +6,7 @@ from BaseClasses import ItemClassification, Location, LocationProgressType
 from Options import OptionError
 
 from . import items
-from .content import LOCATIONS
+from .content import LOCATIONS, TRIBES
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
@@ -21,7 +21,10 @@ AREA_REGIONS = ["Area 1", "Area 2", "Area 3"]
 
 # The goal is a winning run per clan (what counts as winning depends on the goal option). Each is
 # an event location holding a "Victory"; the seed is done with as many as Goal Clans Required asks for.
-CLANS = {"Basic": "Snowdwellers", "Magic": "Shademancers", "Clunk": "Clunkmasters"}
+# Every tribe by ClassData name -> its item's name: ours, then the loaded extensions' (the user's calls,
+# 2026-11-16: a win with any tribe in the seed counts). A slot has its own (WildfrostWorld.tribes).
+CLANS = {tribe: info["name"] for tribe, info in TRIBES.items()}
+BASE_CLANS = ("Basic", "Magic", "Clunk")
 VICTORY_ITEM = "Victory"
 
 
@@ -150,7 +153,7 @@ def create_all_locations(world: WildfrostWorld) -> None:
         region.locations.append(location)
 
     final_area = world.get_region("Area 3")
-    for clan in CLANS:
+    for clan in world.tribes:
         victory = WildfrostLocation(world.player, victory_location(clan), None, final_area)
         victory.place_locked_item(items.WildfrostItem(VICTORY_ITEM, ItemClassification.progression, None, world.player))
         final_area.locations.append(victory)

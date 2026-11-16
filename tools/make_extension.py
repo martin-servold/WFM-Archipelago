@@ -115,6 +115,37 @@ def main() -> None:
         guid = others[0]
 
     notes = []
+    # New tribes (the user's calls, 2026-11-16): each ClassData the base game doesn't have. Its own pools are
+    # the ones the base game doesn't have; "shares" is the vanilla clan whose pools it also draws from.
+    text = args.dump.read_text(encoding="utf-8")
+    base_text = args.vanilla.read_text(encoding="utf-8")
+    base_classes = set(re.findall(r"^  (\S+) id=", gen_data.section(base_text, "ClassData"), re.M))
+    base_pools = set(re.findall(r"^    pool (\S+) ", gen_data.section(base_text, "ClassData"), re.M))
+    old_tribe_names = {r["key"][6:]: r["name"] for r in old["ap_items"] if r.get("kind") == "Tribe"}
+    tribes: dict[str, dict] = {}  # ClassData name -> {"shares", "name", "pools": {pool: (type, [cards])}}
+    tribe = None
+    for line in gen_data.section(text, "ClassData").splitlines():
+        m = re.match(r"  (\S+) id=", line)
+        if m:
+            tribe = m.group(1) if m.group(1) not in base_classes else None
+            if tribe:
+                tribes[tribe] = {"shares": None, "pools": {},
+                                 # "TerrariaAliens" reads "Terraria Aliens"; the creator may rename it.
+                                 "name": old_tribe_names.get(tribe, re.sub(r"(?<=[a-z])(?=[A-Z])", " ", tribe.rsplit(".", 1)[-1]))}
+            continue
+        m = re.match(r"    pool (\S+) type=(\w+) .*?: (.*)", line)
+        if not (tribe and m and m.group(2) in KIND_OF_POOL):
+            continue
+        pool, kind, names = m.group(1), m.group(2), m.group(3).split(", ")
+        if pool not in base_pools:
+            tribes[tribe]["pools"][pool] = (kind, names)
+        elif clan_of(pool) not in (None, "General"):
+            tribes[tribe]["shares"] = clan_of(pool)
+    for tribe, t in list(tribes.items()):
+        if t["shares"] is None:
+            notes.append(f"skipped tribe {tribe}: it draws from none of the vanilla clans' pools, which logic counts on")
+            del tribes[tribe]
+
     # Cards the mod adds, by the reward pool they're in.
     cards = []
     for name, (pool_type, pool) in sorted(mod["cards"].items()):
@@ -127,13 +158,28 @@ def main() -> None:
         cards.append({"key": f"card:{name}", "name": mod["titles"].get(name, name), "kind": KIND_OF_POOL[pool_type],
                       "clan": clan})
 
+    # A tribe's own cards: those only in its own pools (a card a vanilla pool has keeps that clan).
+    filed = {c["key"][5:] for c in cards}
+    for tribe, t in tribes.items():
+        for pool, (pool_type, names) in t["pools"].items():
+            for name in names:
+                if name and name not in base["cards"] and name not in filed:
+                    filed.add(name)
+                    cards.append({"key": f"card:{name}", "name": mod["titles"].get(name, name),
+                                  "kind": KIND_OF_POOL[pool_type], "clan": tribe})
+
     items = []
-    for clan in gen_data.CLAN_LABEL:
+    labels = {**gen_data.CLAN_LABEL, **{tribe: t["name"] for tribe, t in tribes.items()}}
+    for tribe, t in tribes.items():
+        items.append({"key": f"tribe:{tribe}", "name": t["name"], "kind": "Tribe", "shares": t["shares"]})
+    for clan in labels:
         for kind in ("Item", "Companion"):
             count = sum(1 for c in cards if c["clan"] == clan and c["kind"] == kind)
             for i in range(math.ceil(count / gen_data.PACK_SIZE)):
+                # A tribe named after its mod ("Terraria Aliens") isn't prefixed twice.
+                label = labels[clan] if labels[clan].startswith(args.mod) else f"{args.mod} {labels[clan]}"
                 items.append({"key": f"pack:{clan}:{kind}:{args.mod}-{i + 1}",
-                              "name": f"{args.mod} {gen_data.CLAN_LABEL[clan]} {kind} Pack {i + 1}",
+                              "name": f"{label} {kind} Pack {i + 1}",
                               "kind": "Pack", "clan": clan, "card_kind": kind})
     for c in cards:
         if c["kind"] == "Charm":
@@ -151,35 +197,28 @@ def main() -> None:
                               "run_tribe": run_tribe})
             # Its spare "#2", only in a seed short of checks for its items (written as "spares").
             locations.append({"key": key + "#2"})
-    for internal, (goal, title, text) in sorted(mod["all_challenges"].items()):
+    # Each tribe's battle checks (the user's call, 2026-11-16: full checks, like a vanilla clan's): every base
+    # battle and the mod's own, as a Snowdweller run's, with the bosses' "#2" as twins (always in the seed).
+    base_doc = json.loads(gen_data.OUT.read_text(encoding="utf-8"))
+    templates = [r for r in base_doc["ap_locations"]["battles"] if r["run_tribe"] == "Basic"]
+    templates += [loc for loc in locations if loc["key"].startswith("battle:") and loc.get("run_tribe") == "Basic"]
+    for tribe, t in tribes.items():
+        for r in templates:
+            key = r["key"].rsplit(":", 1)[0] + ":" + tribe
+            locations.append({"key": key, "name": r["name"].replace("(Snowdwellers)", f"({t['name']})"),
+                              "area": r["area"], "tier": r["tier"], "boss": r["boss"], "tribe": r["tribe"],
+                              "run_tribe": tribe, **({"true_final": True} if r.get("true_final") else {})})
+            if r["boss"]:
+                locations.append({"key": key + "#2", "twin": True})
+    for internal, (goal, title, desc_text) in sorted(mod["all_challenges"].items()):
         if internal not in base["all_challenges"]:
-            desc = text.replace("{0}", str(goal))
+            desc = desc_text.replace("{0}", str(goal))
             locations.append({"key": f"challenge:{internal}", "name": f"Challenge - {title or desc}", "text": desc,
                               "region": "Area 1", "rule": None})
             # Its spare "#2", only in a seed short of checks for its items (written as "spares").
             locations.append({"key": f"challenge:{internal}#2"})
 
     bells = [{"name": n, "points": p} for n, (p, _) in mod["bells"].items() if n not in base["bells"]]
-
-    # New tribes can't come from an extension yet (PLAN.md §10, "tribes from data"): runs with them send
-    # nothing, and cards only in their own reward pools are left out.
-    text = args.dump.read_text(encoding="utf-8")
-    base_classes = set(re.findall(r"^  (\S+) id=", gen_data.section(args.vanilla.read_text(encoding="utf-8"), "ClassData"), re.M))
-    tribe_cards: dict[str, set] = {}
-    tribe = None
-    for line in gen_data.section(text, "ClassData").splitlines():
-        m = re.match(r"  (\S+) id=", line)
-        if m:
-            tribe = m.group(1) if m.group(1) not in base_classes else None
-            continue
-        m = re.match(r"    pool (\S+) type=(\w+) .*?: (.*)", line)
-        if tribe and m and m.group(2) in KIND_OF_POOL:
-            tribe_cards.setdefault(tribe, set()).update(n for n in m.group(3).split(", ") if n not in base["cards"]
-                                                        and n not in {c["key"][5:] for c in cards})
-    if tribe_cards:
-        notes.append(f"{len(tribe_cards)} new tribes aren't supported yet (runs with them send nothing); left out "
-                     f"{sum(len(v) for v in tribe_cards.values())} cards only in their pools: "
-                     + ", ".join(f"{t.rsplit('.', 1)[-1]} {len(v)}" for t, v in sorted(tribe_cards.items())))
 
     base_battle_names = {b[0].split(":")[2] for b in base["battles"]}
     mod_battle_names = {b[0].split(":")[2] for b in mod["battles"]}
@@ -197,7 +236,7 @@ def main() -> None:
     # (which also counts clans whose leaders apply it), and the mod's cards join our groups whose effect
     # they apply. What the creator added to groups by hand stays; the "note" below says which effect each
     # of our groups stands for.
-    base_text, mod_text = args.vanilla.read_text(encoding="utf-8"), args.dump.read_text(encoding="utf-8")
+    mod_text = text
     base_effects = effects(base_text)
     if "## Card effects" in mod_text:
         mod_effects = effects(mod_text)
@@ -226,6 +265,14 @@ def main() -> None:
         if traits:
             c["traits"] = sorted(traits)
     groups = {g: v for g, v in sorted(groups.items()) if v}
+    # Its tribes' leaders and what they apply, for ["applies", ...] (as the base file's "leaders").
+    mod_leaders = leaders(mod_text)
+
+    def leader_row(name: str) -> dict:
+        _, applied, traits = mod_effects.get(name, ("", set(), set()))
+        return {"key": name, **({"applies": sorted(applied)} if applied else {}),
+                **({"traits": sorted(traits)} if traits else {})}
+    tribe_leaders = {tribe: [leader_row(n) for n in mod_leaders[tribe]] for tribe in tribes if mod_leaders.get(tribe)}
     notes.append("our groups stand for: " + ", ".join(f"{g} = {e}" for g, e in sorted(standing.items())))
 
     # IDs: kept for keys the old file had, the next free one in the block for new keys.
@@ -242,6 +289,8 @@ def main() -> None:
                 for field in ("name", "rule", "region", "excluded", "text"):
                     if field in previous and row["key"].startswith("challenge:"):
                         row[field] = previous[field]
+                if row.get("kind") == "Tribe":
+                    row["name"] = previous["name"]
                 # A themed pack's card list, as the creator wrote it (cards since gone are dropped).
                 if "cards" in previous and row.get("kind") == "Pack":
                     row["cards"] = [c for c in previous["cards"] if any(c == card["key"] for card in cards)]
@@ -277,8 +326,12 @@ def main() -> None:
            "ap_locations": {**{section: [loc for loc in locations if loc["key"].startswith(prefix) and not loc["key"].endswith("#2")]
                                for section, prefix in (("battles", "battle:"), ("challenges", "challenge:"))
                                if any(loc["key"].startswith(prefix) for loc in locations)},
-                            "spares": {loc["key"][:-2]: loc["id"] for loc in locations if loc["key"].endswith("#2")}},
+                            "twins": {loc["key"][:-2]: loc["id"] for loc in locations if loc.get("twin")},
+                            "spares": {loc["key"][:-2]: loc["id"] for loc in locations
+                                       if loc["key"].endswith("#2") and not loc.get("twin")}},
+           **({"leaders": tribe_leaders} if tribe_leaders else {}),
            "bells": bells, "groups": groups, "removes": removes}
+    doc["ap_locations"] = {k: v for k, v in doc["ap_locations"].items() if v}
     out.write_text(gen_data.dump_json(doc), encoding="utf-8")
 
     unruled = [loc["key"] for loc in locations if loc["key"].startswith("challenge:") and not loc.get("rule")]

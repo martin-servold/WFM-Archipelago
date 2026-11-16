@@ -190,6 +190,7 @@ namespace WildfrostArchipelago
         private volatile bool noPossessedFinalBoss;
         private volatile int trueFinalPoints = 10;
         private volatile List<SeedExtension> seedExtensions = new List<SeedExtension>();
+        private volatile List<SeedTribe> seedTribes;
         private volatile bool newChallenges;
         private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
@@ -293,7 +294,8 @@ namespace WildfrostArchipelago
         /// <summary>
         /// The rules come as one JSON string from 0.4.1 on: Archipelago 0.6.8's Python clients (Universal
         /// Tracker) drop any message nested over 16 deep, and the rules nest up to 15 (found 2026-11-13).
-        /// Older seeds send them as an object.
+        /// Older seeds send them as an object. Newer ones gzip and base64 that string behind "gz:" (an
+        /// extension's tribes made the JSON 830 KB; 18 KB gzipped).
         /// </summary>
         private static Dictionary<string, JToken> ReadLocationRules(object value)
         {
@@ -302,14 +304,25 @@ namespace WildfrostArchipelago
             {
                 try
                 {
+                    if (text.StartsWith("gz:")) text = Gunzip(text.Substring(3));
                     rules = JObject.Parse(text);
                 }
-                catch (Newtonsoft.Json.JsonException)
+                catch (Exception e) when (e is Newtonsoft.Json.JsonException || e is FormatException || e is InvalidDataException)
                 {
                     rules = null; // unreadable: no rules, so every open check shows as in logic
                 }
             }
             return rules?.Properties().ToDictionary(p => p.Name, p => p.Value) ?? new Dictionary<string, JToken>();
+        }
+
+        private static string Gunzip(string base64)
+        {
+            using (var input = new MemoryStream(Convert.FromBase64String(base64)))
+            using (var gzip = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress))
+            using (var reader = new StreamReader(gzip, Encoding.UTF8))
+            {
+                return reader.ReadToEnd();
+            }
         }
 
         /// <summary>Every location's display name by key, looked up at login.</summary>
@@ -366,6 +379,16 @@ namespace WildfrostArchipelago
         public int TrueFinalPoints => trueFinalPoints;
         /// <summary>slot_data "extensions": the mod extension files the seed was made with (PLAN.md §10); none in older seeds.</summary>
         public List<SeedExtension> SeedExtensions => seedExtensions;
+
+        /// <summary>slot_data "tribes": the seed's tribes, the vanilla three and its extensions' (the user's calls,
+        /// 2026-11-16); null in older seeds, which have the vanilla three.</summary>
+        public List<SeedTribe> SeedTribes => seedTribes;
+
+        public class SeedTribe
+        {
+            // ClassData name, its tribe item's name, and for an extension's tribe the vanilla clan whose pools it shares.
+            public string Class, Name, Shares;
+        }
 
         public class SeedExtension
         {
@@ -617,6 +640,12 @@ namespace WildfrostArchipelago
                     Mod = (string)e["mod"], Guid = (string)e["guid"], Version = (string)e["version"],
                 }).ToList()
                 : new List<SeedExtension>();
+            seedTribes = slotData.TryGetValue("tribes", out object tribeData) && tribeData is JArray tribeArray
+                ? tribeArray.OfType<JObject>().Select(t => new SeedTribe
+                {
+                    Class = (string)t["class"], Name = (string)t["name"], Shares = (string)t["shares"],
+                }).ToList()
+                : null;
             newChallenges = slotData.TryGetValue("new_challenges", out object challenges) && Convert.ToBoolean(challenges);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);

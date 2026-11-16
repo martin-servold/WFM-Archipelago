@@ -23,9 +23,10 @@ def _check_references(ext: extensions.Extension) -> None:
     bells = {name for name, _, _ in data.BELLS} | set(ext.bells)
     battles = {key.split(":")[2] for rows in (data.LOCATIONS, ext.locations) for key, _, _, _ in rows if key.startswith("battle:")}
     applied = {e for rows in (data.CARDS, ext.cards) for _, _, info in rows for e in info.get("applies", [])}
-    applied |= {e for leaders in data.LEADERS.values() for leader in leaders for e in leader.get("applies", [])}
+    leaders = [leader for source in (data.LEADERS, ext.leaders) for rows in source.values() for leader in rows]
+    applied |= {e for leader in leaders for e in leader.get("applies", [])}
     traits = {t for rows in (data.CARDS, ext.cards) for _, _, info in rows for t in info.get("traits", [])}
-    traits |= {t for leaders in data.LEADERS.values() for leader in leaders for t in leader.get("traits", [])}
+    traits |= {t for leader in leaders for t in leader.get("traits", [])}
 
     def group_or_cards(value, what: str) -> int:
         """Checks a group name or card list; returns how many members it has."""
@@ -116,3 +117,13 @@ BELL_POINTS = {name: points for name, points, _ in data.BELLS}
 for _ext in extensions.LOADED.values():
     BELL_POINTS.update(_ext.bells)
 EXT_OF_ITEM_NAME = {name: info["ext"] for _, name, _, info in ITEMS if "ext" in info}
+# Every tribe (the user's calls, 2026-11-16): ClassData name -> its tribe item's row info, ours (Basic, Magic,
+# Clunk) and the loaded extensions' (their info has "ext" and "shares"). A slot has ours and its extensions'
+# (WildfrostWorld.tribes).
+TRIBES = {key.removeprefix("tribe:"): {**info, "name": name} for key, name, _, info in ITEMS if info["kind"] == "Tribe"}
+# The vanilla clan whose pools each extension tribe also draws from (rules.clan_packs).
+SHARES = {tribe: info["shares"] for tribe, info in TRIBES.items() if "shares" in info}
+# Each tribe's leaders and what they apply: ours (data.LEADERS) and the loaded extensions' tribes'.
+LEADERS = {clan: list(rows) for clan, rows in data.LEADERS.items()}
+for _ext in extensions.LOADED.values():
+    LEADERS.update(_ext.leaders)

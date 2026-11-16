@@ -64,8 +64,8 @@ namespace WildfrostArchipelago
             text.Append($"\n<size=80%>Not in logic yet: {open.Count - inLogic.Count}.</size>\n");
         }
 
-        // Pack groups, as the apworld names them: General, then the clans, by kind.
-        private static readonly string[] Clans = { "General", "Basic", "Magic", "Clunk" };
+        // Pack groups, as the apworld names them: General, then the seed's tribes (an extension's too), by kind.
+        private static string[] Clans => ApMode.PackClans.ToArray();
         private static readonly string[] Kinds = { "Companion", "Item", "Charm" };
         public static int PackGroupCount => Clans.Length * Kinds.Length;
 
@@ -77,7 +77,9 @@ namespace WildfrostArchipelago
                 text.Append("\n<size=80%>Connect once to load this seed's packs.</size>\n");
                 return;
             }
-            string clan = Clans[group / Kinds.Length], kind = Kinds[group % Kinds.Length];
+            var clans = Clans;
+            if (group >= clans.Length * Kinds.Length) group = 0;
+            string clan = clans[group / Kinds.Length], kind = Kinds[group % Kinds.Length];
             // Newer seeds have charms as items one by one ("charm:<clan>:<card>"), so their group lists those.
             var charms = kind == "Charm" ? itemNames.Keys.Where(k => k.StartsWith($"charm:{clan}:")).OrderBy(k => itemNames[k]).ToList() : null;
             if (charms != null && charms.Count > 0)
