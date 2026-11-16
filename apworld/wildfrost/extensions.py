@@ -348,6 +348,10 @@ def parse(path: str, raw: bytes) -> Extension:
                 check_rule(rule, f"{what}.rule")
             info = {"internal": internal, "text": loc.get("text", name), "region": region, "rule": rule,
                     "excluded": _require(loc.get("excluded", False), bool, f"{what}.excluded")}
+            # The True Final Boss fight itself, like our Sunbringer: its bells too, and filler only (or left
+            # out) where the goal doesn't go there (locations.true_final_challenge).
+            if _require(loc.get("true_final", False), bool, f"{what}.true_final"):
+                info["true_final"] = True
         else:
             raise ExtensionError(f"{what}.key should start with 'battle:' or 'challenge:'")
         info["ext"] = ext.mod

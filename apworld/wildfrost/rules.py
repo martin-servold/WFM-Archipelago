@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
 
 from .content import CARDS, ITEMS, LOCATIONS
-from .data import LEADERS
+from .data import LEADERS, LOGIC
 from .groups import GROUPS
 from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS
-from .locations import CLANS, SUNBRINGER, VICTORY_ITEM, included, victory_location
+from .locations import CLANS, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
@@ -47,20 +47,21 @@ def required_tribes(key: str, info: dict) -> set[str]:
     return {t for t in (info["run_tribe"], info["tribe"]) if t in CLANS}
 
 
-# Storm bell levels (items.STORM_BELL_LEVELS): each one adds 2 storm points, so the 5th
-# (items.TRUE_FINAL_BELLS) reaches the True Final Boss's 10; the 11th unlocks Overcrank.
-
-
-# Deck strength (decided by the user 2026-10-30). Fights 1-5 of a run (map tiers 0-4: two battles,
-# the first boss, two battles) need no cards. From the second boss (tier 5) on, a run needs some of
-# its clan's cards; the True Final Boss and Overcrank need more, plus the bell levels. Counted in
-# packs a run of that clan can draw from: General ones and the clan's own.
-NO_CARDS_UP_TO_TIER = 4
-
-
+# Kits, storm bell steps, goals, forcing and Reverse are the base file's "logic" section (PLAN.md §10,
+# phase 3); the numbers were decided with the user between 2026-10-30 and 2026-11-16 (PLAN.md §5-§7).
+# A kit is (companion packs, item packs, charms) alternatives, counted in what a run of its clan draws
+# from: General packs and charms and the clan's own.
+STORM = LOGIC["storm_bells"]
+POINTS_PER_LEVEL = STORM["points_per_level"]
+TRUE_FINAL_POINTS = STORM["true_final_points"]  # vanilla's StormBellManager.TrueFinalBossPointThreshold
+OVERCRANK_POINTS = STORM["overcrank_points"]
+KITS = {name: tuple((a.get("companions", 0), a.get("items", 0), a.get("charms", 0)) for a in alternatives)
+        for name, alternatives in LOGIC["kits"].items()}
+# Fights before this map tier (the first boss and the battles around it) need no cards.
+CARDS_FROM_TIER = LOGIC["battles"]["cards_from_tier"]
+# Charms are items one by one (2026-11-02); where logic counts a pack, it may count this many charms.
+CHARMS_PER_PACK = LOGIC["charms_per_pack"]
 PACK_KINDS = ("Companion", "Item", "Charm")
-# Charms are items one by one (2026-11-02); where logic used to count a charm pack it counts this many.
-CHARMS_PER_PACK = 3
 
 
 def clan_packs(clan: str, kind: str) -> list[str]:
@@ -88,72 +89,82 @@ def packs(clan: str, companions: int, items: int, charms: int, extra: int = 0):
     return And(*rules) if len(rules) > 1 else rules[0]
 
 
-# Force Storm Bells Up To makes every run harder, so logic adds one pack of any kind to the win kits,
-# and one more at 22 (Overcrank), as Force Storm Bells and Force Overcrank each did (decided by the
-# user 2026-11-02; the two became one option 2026-11-06, and logic stays at that, the user's call).
-OVERCRANK_POINTS = 22
+def step_value(steps: list, points: int) -> int:
+    """A ramp's value at these storm points: the last step whose "from_points" they reach (0 before the first)."""
+    return max((step["extra"] for step in steps if points >= step["from_points"]), default=0)
 
 
 def forced_extra(world: WildfrostWorld) -> int:
-    points = world.options.force_storm_bells_up_to.value
-    return int(points > 0) + int(points >= OVERCRANK_POINTS)
+    """
+    Force Storm Bells Up To makes every run harder, so logic adds packs of any kind to the win kits
+    (logic "forced_extra": one when forcing, two at Overcrank; the user's calls 2026-11-02 and 11-06).
+    """
+    return step_value(LOGIC["forced_extra"], world.options.force_storm_bells_up_to.value)
 
 
-# The client's forcing ramp (bell_kits) asks more of the higher levels, so forcing never holds a run to
-# bells its packs can't carry: none at 2 storm points, one pack at 4-12, two from 14 on, Overcrank
-# included (decided by the user 2026-11-06). Logic doesn't follow it (forced_extra).
 def forced_pack_extra(points: int) -> int:
-    return 0 if points <= 2 else 1 if points <= 12 else 2
+    """The client's forcing ramp (logic "forcing"): the extra packs a run needs before bells up to these points are forced."""
+    return step_value(LOGIC["forcing"]["extra"], points)
 
 
-# Each win kit as (companion packs, item packs, charms) alternatives; the charm counts were packs
-# times CHARMS_PER_PACK (decided by the user 2026-11-02). The client gets them too (bell_kits), to
-# force only the bells a run's packs can carry.
-FINAL_BOSS_PACKS = ((1, 1, 0), (1, 0, 6))  # a companion pack, and an item pack or six charms
-TRUE_FINAL_PACKS = ((2, 2, 3),)
-OVERCRANK_PACKS = ((2, 3, 6),)
-
-
-def kit_packs(clan: str, alternatives, extra: int):
-    rules = [packs(clan, *counts, extra) for counts in alternatives]
+def kit(name: str, clan: str, extra: int = 0):
+    """A kit's packs for a run of that clan, plus the forced extra."""
+    rules = [packs(clan, *counts, extra) for counts in KITS[name]]
     return Or(*rules) if len(rules) > 1 else rules[0]
 
 
+def bells_for(points: int, world: WildfrostWorld | None = None) -> int:
+    """
+    The Progressive Storm Bells that reach these storm points. Overcrank takes every level; anything up to
+    the True Final Boss's threshold is held to it (world.true_final_points: lower when an extension removes
+    so many storm bells that 10 can't be reached, the user's call 2026-11-15).
+    """
+    if points >= OVERCRANK_POINTS:
+        return STORM_BELL_LEVELS
+    if world is not None and points >= TRUE_FINAL_POINTS:
+        return world.true_final_bells + -(-(points - TRUE_FINAL_POINTS) // POINTS_PER_LEVEL)
+    return -(-points // POINTS_PER_LEVEL)
+
+
+def kit_with_bells(name: str, clan: str, extra: int, bells: int):
+    return both(kit(name, clan, extra), Has(STORM_BELL, bells) if bells else None)
+
+
 def final_boss_kit(clan: str, extra: int = 0):
-    return kit_packs(clan, FINAL_BOSS_PACKS, extra)
-
-
-# Vanilla's True Final Boss threshold (StormBellManager.TrueFinalBossPointThreshold).
-TRUE_FINAL_POINTS = 10
+    return kit(LOGIC["battles"]["kit"], clan, extra)
 
 
 def true_final_kit(clan: str, extra: int = 0, bells: int = TRUE_FINAL_BELLS):
-    """bells: the Progressive Storm Bells that reach the True Final Boss (world.true_final_bells: fewer
-    when an extension removes so many storm bells that 10 storm points can't be reached)."""
-    return And(kit_packs(clan, TRUE_FINAL_PACKS, extra), Has(STORM_BELL, bells))
+    """The True Final Boss fight: its kit and the bells that reach it (world.true_final_bells)."""
+    return kit_with_bells(LOGIC["battles"]["true_final_kit"], clan, extra, bells)
 
 
-def overcrank_kit(clan: str, extra: int = 0):
-    return And(kit_packs(clan, OVERCRANK_PACKS, extra), Has(STORM_BELL, STORM_BELL_LEVELS))
+def goal_kit(world: WildfrostWorld, clan: str, extra: int):
+    """A win for the goal: its kit, and the bells for its storm points (logic "goals")."""
+    goal = LOGIC["goals"][world.options.goal.current_key]
+    return kit_with_bells(goal["kit"], clan, extra, bells_for(goal["storm_points"], world))
 
 
-def bell_kits() -> list:
+def bell_kits(true_final_bells: int = TRUE_FINAL_BELLS) -> list:
     """
     For slot_data: the most bell levels each kit carries, and its packs. Force Storm Bells Up To only
-    forces the bells a run's clan has the packs for (decided by the user 2026-11-02): levels 1-4 (up
-    to 8 storm points) take the Final Boss kit, level 5 (10, the True Final Boss) its kit, and levels
-    6-11 (12 to 20 storm points, then Overcrank) the Overcranked one, each plus its level's forced
-    extra (forced_pack_extra). Logic can't follow forced bells itself, since a requirement can't grow
-    as items arrive.
+    forces the bells a run's clan has the packs for (decided by the user 2026-11-02): each level takes the
+    kit for its storm points (logic "forcing"), plus its forced extra (forced_pack_extra). Logic can't
+    follow forced bells itself, since a requirement can't grow as items arrive.
+    true_final_bells (world.true_final_bells): when an extension's removals lower the True Final Boss
+    threshold, the level that reaches it takes its kit, and the kits above move down with it; the
+    forced extra stays on the level's own storm points.
     """
-    def alternatives(kit, extra):
+    shift = POINTS_PER_LEVEL * (TRUE_FINAL_BELLS - true_final_bells)
+    def alternatives(counts, extra):
         # The forced extra as in packs(): each one more companion or item pack, or that many charms.
-        return [{"Companion": c, "Item": i, "Charm": ch, "extra": extra, "charms_per_pack": CHARMS_PER_PACK} for c, i, ch in kit]
+        return [{"Companion": c, "Item": i, "Charm": ch, "extra": extra, "charms_per_pack": CHARMS_PER_PACK} for c, i, ch in counts]
 
     kits = []
     for level in range(1, STORM_BELL_LEVELS + 1):
-        kit = FINAL_BOSS_PACKS if level < TRUE_FINAL_BELLS else TRUE_FINAL_PACKS if level == TRUE_FINAL_BELLS else OVERCRANK_PACKS
-        entry = alternatives(kit, forced_pack_extra(2 * level))
+        points = POINTS_PER_LEVEL * level
+        name = next(step["kit"] for step in LOGIC["forcing"]["kits"] if min(points + shift, OVERCRANK_POINTS) <= step["up_to_points"])
+        entry = alternatives(KITS[name], forced_pack_extra(points))
         if kits and kits[-1][1] == entry:
             kits[-1][0] = level  # same packs as the level below: one kit carries both
         else:
@@ -161,24 +172,12 @@ def bell_kits() -> list:
     return kits
 
 
-GOAL_KIT = {0: final_boss_kit, 1: true_final_kit, 2: overcrank_kit}
-
-
 # Reverse Storm Bells (designed with the user 2026-11-05): runs start Overcranked and each
-# Progressive Storm Bell lowers the floor a step. Packs a run needs to get through each stretch,
-# by bells received (0 = Overcranked, then 20, 18, ... 2 storm points, and 11 = no bells). A pack
-# is a companion or item pack, or CHARMS_PER_PACK charms. Placeholder numbers, to tune from
-# playtests (the client's "Run summary" log line); later split into companions, items and charms.
-# Moved to the 11 even steps on 2026-11-06 by storm points: 12-20 take the old Overcranked column
-# (the first playtests found 10 easy and Overcranked not much harder), 10 down to 0 the old ones.
-REVERSE_PACKS = {
-    #                 OC  20  18  16  14  12  10   8   6   4   2   0
-    "Area 1 fights": (0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0),
-    "Area 1 boss":   (2,  2,  2,  2,  2,  2,  2,  1,  1,  0,  0,  0),
-    "Area 2":        (4,  4,  4,  4,  4,  4,  4,  3,  2,  1,  1,  1),
-    "Area 3":        (6,  6,  6,  6,  5,  5,  5,  4,  3,  3,  2,  2),
-}
-assert all(len(row) == STORM_BELL_LEVELS + 1 for row in REVERSE_PACKS.values())
+# Progressive Storm Bell lowers the floor a step. Logic "reverse.stretches": the packs a run needs to get
+# through each stretch, by bells received (0 = Overcranked, then 20, 18, ... 2 storm points, and every
+# bell = none). A pack is a companion or item pack, or CHARMS_PER_PACK charms. Placeholder numbers, to
+# tune from playtests (the client's "Run summary" log line).
+REVERSE_PACKS = LOGIC["reverse"]["stretches"]
 
 
 def reverse(world: WildfrostWorld) -> bool:
@@ -201,7 +200,7 @@ def reverse_kit(clan: str, stretch: str):
 
 def reverse_true_final_kit(clan: str):
     """A no-bell run (every bell step), with the True Final Boss kit."""
-    return And(kit_packs(clan, TRUE_FINAL_PACKS, 0), Has(STORM_BELL, STORM_BELL_LEVELS))
+    return kit_with_bells(LOGIC["reverse"]["true_final_kit"], clan, 0, STORM_BELL_LEVELS)
 
 
 def reverse_stretch(area: int, tier: int) -> str:
@@ -224,7 +223,7 @@ def both(*rules):
 def battle_kit(info: dict, extra: int, tf_bells: int = TRUE_FINAL_BELLS):
     if info.get("true_final"):
         return true_final_kit(info["run_tribe"], extra, tf_bells)
-    return final_boss_kit(info["run_tribe"], extra) if info["tier"] > NO_CARDS_UP_TO_TIER else None
+    return final_boss_kit(info["run_tribe"], extra) if info["tier"] >= CARDS_FROM_TIER else None
 
 
 def any_clan(kit):
@@ -240,23 +239,9 @@ def battle_rule(key: str, info: dict, extra: int, reversed_bells: bool = False, 
     return both(tribe_rule(required_tribes(key, info)), battle_kit(info, extra, tf_bells))
 
 
-def companion_and_item_pack(clan: str):
-    return packs(clan, 1, 1, 0)
-
-
-# Challenges that need a companion pack and an item pack in the run's clan (decided by the user 2026-11-02).
-
-
-def two_companions_and_one_more(clan: str):
-    """Two companion packs, and an item pack or CHARMS_PER_PACK charms."""
-    return Or(packs(clan, 2, 1, 0), packs(clan, 2, 0, CHARMS_PER_PACK))
-
-
 def card_packs(clan: str, count: int):
     """Companion and item packs together."""
     return HasFromList(*(clan_packs(clan, "Companion") + clan_packs(clan, "Item")), count=count)
-
-
 
 
 def uses_area_kit(info: dict) -> bool:
@@ -264,18 +249,17 @@ def uses_area_kit(info: dict) -> bool:
     return '"area_kit": true' in json.dumps(info.get("rule"))
 
 
-def area_kit(region: str, clan: str, extra: int, tf_bells: int = TRUE_FINAL_BELLS, sunbringer: bool = False):
+def area_kit(region: str, clan: str, extra: int, tf_bells: int = TRUE_FINAL_BELLS, true_final: bool = False):
     """
-    What a run of a clan needs to do a challenge in that region (the user's calls, 2026-11-16): Area 1
-    nothing; Area 2 the Final Boss kit, which Area 2's battles need (only when a rule asks, "area_kit");
-    Area 3 a won run, the Final Boss kit; Area 4 the True Final Boss kit's packs, and for Sunbringer, the
-    True Final Boss fight itself, its bells too.
+    What a run of a clan needs to do a challenge in that region (logic "regions"; the user's calls,
+    2026-11-16): Area 1 nothing; Area 2 the Final Boss kit, which Area 2's battles need (only when a rule
+    asks, "area_kit"); Area 3 a won run, the Final Boss kit; Area 4 the True Final Boss kit's packs. A
+    challenge that is the True Final Boss fight itself ("true_final": Sunbringer) needs its bells too.
     """
-    if region in ("Area 2", "Area 3"):
-        return final_boss_kit(clan, extra)
-    if region == "Area 4":
-        return true_final_kit(clan, extra, tf_bells) if sunbringer else kit_packs(clan, TRUE_FINAL_PACKS, extra)
-    return None
+    name = LOGIC["regions"].get(region)
+    if name is None:
+        return None
+    return kit_with_bells(name, clan, extra, tf_bells if true_final else 0)
 
 
 def challenge_kit(info: dict, extra: int, reversed_bells: bool = False, tf_bells: int = TRUE_FINAL_BELLS):
@@ -288,8 +272,7 @@ def challenge_kit(info: dict, extra: int, reversed_bells: bool = False, tf_bells
     region = challenge_region(info)
     if region not in ("Area 3", "Area 4") or uses_area_kit(info):
         return None
-    sunbringer = info["internal"] == SUNBRINGER
-    return any_clan(lambda clan: area_kit(region, clan, extra, tf_bells, sunbringer))
+    return any_clan(lambda clan: area_kit(region, clan, extra, tf_bells, bool(info.get("true_final"))))
 
 
 def reverse_challenge_kit(info: dict):
@@ -297,8 +280,7 @@ def reverse_challenge_kit(info: dict):
     Reverse Storm Bells: the normal pack needs (without the forced extra), plus getting as far as
     the challenge's area at the run's bells. The win challenges take the Area 3 stretch.
     """
-    internal = info["internal"]
-    if internal == SUNBRINGER:
+    if info.get("true_final"):
         return any_clan(reverse_true_final_kit)
     base = challenge_kit(info, 0)
     region = challenge_region(info)
@@ -575,10 +557,8 @@ def set_all_rules(world: WildfrostWorld) -> None:
             world.set_rule(world.get_location(name), rule)
             world.location_rules[key] = rule_json(rule)
 
-    kit = (lambda clan, _: reverse_true_final_kit(clan)) if reversed_bells else GOAL_KIT[world.options.goal.value]
-    if kit is true_final_kit:
-        kit = lambda clan, extra: true_final_kit(clan, extra, world.true_final_bells)  # noqa: E731
     for clan in CLANS:
-        world.set_rule(world.get_location(victory_location(clan)), both(tribe_rule({clan}), kit(clan, extra)))
+        win = reverse_true_final_kit(clan) if reversed_bells else goal_kit(world, clan, extra)
+        world.set_rule(world.get_location(victory_location(clan)), both(tribe_rule({clan}), win))
 
     world.set_completion_rule(Has(VICTORY_ITEM, world.options.clans_required.value))

@@ -189,6 +189,7 @@ namespace WildfrostArchipelago
         private volatile bool leaderReroll;
         private volatile bool noPossessedFinalBoss;
         private volatile int trueFinalPoints = 10;
+        private volatile List<SeedExtension> seedExtensions = new List<SeedExtension>();
         private volatile bool newChallenges;
         private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
@@ -363,6 +364,14 @@ namespace WildfrostArchipelago
         /// <summary>slot_data "true_final_points": the True Final Boss's storm point threshold, below vanilla's 10
         /// when the seed's mod extensions remove too many storm bells (PLAN.md §10); 10 in older seeds.</summary>
         public int TrueFinalPoints => trueFinalPoints;
+        /// <summary>slot_data "extensions": the mod extension files the seed was made with (PLAN.md §10); none in older seeds.</summary>
+        public List<SeedExtension> SeedExtensions => seedExtensions;
+
+        public class SeedExtension
+        {
+            // The extension's name (the Mod Content option), its mod's GUID, and the extension file's own version.
+            public string Mod, Guid, Version;
+        }
         /// <summary>slot_data "new_challenges": the challenges made for Archipelago are checks (off in older seeds).</summary>
         public bool NewChallenges => newChallenges;
 
@@ -602,6 +611,12 @@ namespace WildfrostArchipelago
             leaderReroll = slotData.TryGetValue("leader_reroll", out object reroll) && Convert.ToBoolean(reroll);
             noPossessedFinalBoss = slotData.TryGetValue("disable_possessed_final_boss", out object possessed) && Convert.ToBoolean(possessed);
             trueFinalPoints = slotData.TryGetValue("true_final_points", out object finalPoints) ? Convert.ToInt32(finalPoints) : 10;
+            seedExtensions = slotData.TryGetValue("extensions", out object exts) && exts is JArray extArray
+                ? extArray.OfType<JObject>().Select(e => new SeedExtension
+                {
+                    Mod = (string)e["mod"], Guid = (string)e["guid"], Version = (string)e["version"],
+                }).ToList()
+                : new List<SeedExtension>();
             newChallenges = slotData.TryGetValue("new_challenges", out object challenges) && Convert.ToBoolean(challenges);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);

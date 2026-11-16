@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from BaseClasses import Item, ItemClassification
 
 from .content import CARDS, ITEMS
+from .data import LOGIC
 
 if TYPE_CHECKING:
     from .world import WildfrostWorld
@@ -43,9 +44,10 @@ PROGRESSION_PETS = {SPIKE_PET, LOKI_PET, SNEEZLE_PET}
 # Reverse runs the other way: Overcranked, 20, 18, ... 2, then no bells. The client lifts vanilla's
 # 10-point cap for these seeds; seeds from before (slot_data without storm_bell_levels) had 7 levels:
 # 5 storm points, up to 10, Overcrank.
-STORM_BELL_LEVELS = 11
+# The numbers are the base file's logic "storm_bells" (PLAN.md §10, phase 3).
+STORM_BELL_LEVELS = LOGIC["storm_bells"]["levels"]
 # The 5th bell reaches the True Final Boss's 10 storm points.
-TRUE_FINAL_BELLS = 5
+TRUE_FINAL_BELLS = -(-LOGIC["storm_bells"]["true_final_points"] // LOGIC["storm_bells"]["points_per_level"])
 
 CLASSIFICATION_BY_KIND = {
     # Tribes gate tribe-locked battles and the "win with tribe" challenges.

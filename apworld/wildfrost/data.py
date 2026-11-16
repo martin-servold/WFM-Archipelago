@@ -51,3 +51,24 @@ CARDS = sorted(((e["key"], e["name"], {"kind": KIND_OF_SECTION[section], "clan":
 LEADERS: dict[str, list[dict]] = {clan: list(leaders) for clan, leaders in _doc.get("leaders", {}).items()}
 BELLS = [(b["name"], b["points"], b["title"]) for b in _doc["bells"]]
 GROUPS: dict[str, list[str]] = {g: list(v) for g, v in _doc.get("groups", {}).items()}
+
+
+def _check_logic(logic: dict) -> dict:
+    """
+    The logic section (PLAN.md §10, phase 3): kits, storm bell steps, goals, forcing and Reverse, written by
+    hand. Checked here so a slip fails when the apworld loads rather than partway through a generation.
+    """
+    kits, bells = logic["kits"], logic["storm_bells"]
+    for name, alternatives in kits.items():
+        assert alternatives and all(set(a) <= {"companions", "items", "charms"} for a in alternatives), name
+    named = [logic["battles"]["kit"], logic["battles"]["true_final_kit"], logic["reverse"]["true_final_kit"],
+             *logic["regions"].values(), *(g["kit"] for g in logic["goals"].values()),
+             *(step["kit"] for step in logic["forcing"]["kits"])]
+    assert all(kit in kits for kit in named), [kit for kit in named if kit not in kits]
+    assert bells["levels"] * bells["points_per_level"] == bells["overcrank_points"]
+    assert all(len(row) == bells["levels"] + 1 for row in logic["reverse"]["stretches"].values())
+    assert logic["forcing"]["kits"][-1]["up_to_points"] >= bells["overcrank_points"]
+    return logic
+
+
+LOGIC: dict = _check_logic(_doc["logic"])

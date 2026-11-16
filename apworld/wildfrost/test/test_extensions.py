@@ -91,6 +91,15 @@ class TestExtensionFile(unittest.TestCase):
         doc["ap_locations"]["challenges"][0]["key"] = "challenge:ap:sample"
         self.assert_refused(doc, "this apworld's own New Challenges")
 
+    def test_true_final_challenge(self) -> None:
+        """A challenge can be the True Final Boss fight itself, like Sunbringer: its bells and kit (rules.area_kit)."""
+        doc = sample()
+        doc["ap_locations"]["challenges"][0]["true_final"] = True
+        info = next(info for key, _, _, info in parsed(doc).locations if key == doc["ap_locations"]["challenges"][0]["key"])
+        self.assertTrue(info["true_final"])
+        doc["ap_locations"]["challenges"][0]["true_final"] = "yes"
+        self.assert_refused(doc, "true_final")
+
 
 class TestExtensionGeneration(unittest.TestCase):
     """
@@ -162,6 +171,9 @@ class TestExtensionGeneration(unittest.TestCase):
         self.assertEqual(got["kept"], ["Challenge - Injure 3 companions", "Challenge - Ring the Troll Bell"])
         self.assertEqual(got["troll_rule"], ["has", "storm_bell", 1])
         self.assertTrue(got["beatable"])
+        # Forcing: the 4th bell (8 storm points) passes the lowered threshold, so it takes the True Final
+        # Boss kit (two companion and two item packs), not the 5th; the Overcranked kit moves down with it.
+        self.assertEqual(got["bell_kits"], [[1, 1, 1], [3, 1, 1], [4, 2, 2], [6, 2, 3], [11, 2, 3]])
 
     def test_room_for_every_item(self) -> None:
         # OverflowMod: 150 packs and no checks. Every spare "#2" (challenges', then battles') isn't enough,

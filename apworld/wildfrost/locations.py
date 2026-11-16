@@ -67,16 +67,14 @@ def included(world: WildfrostWorld, info: dict, key: str = "") -> bool:
         return new_challenges
     if world.options.goal != world.options.goal.option_final_boss:
         return True
-    if info.get("internal") == SUNBRINGER and world.goal_sized_bells:
-        return False
+    if true_final_challenge(info):
+        return not world.goal_sized_bells
     return not info.get("true_final")
 
 
 def filler_only(world: WildfrostWorld, info: dict) -> bool:
     """An excluded check: it only ever holds filler."""
-    internal = info.get("internal")
-    return (internal == SUNBRINGER and sunbringer_excluded(world)) \
-        or bool(info.get("excluded"))
+    return (true_final_challenge(info) and sunbringer_excluded(world)) or bool(info.get("excluded"))
 
 
 def is_spare(world: WildfrostWorld, info: dict) -> bool:
@@ -122,14 +120,18 @@ def spare_checks(world: WildfrostWorld) -> set[str]:
 
 # Filler only: a row's "excluded" in base.wildfrost.json (Gnomebringer, decided by the user 2026-11-02:
 # too much luck; Reach a boss holding 200+ Bling, 2026-11-08: players may sink a run for it).
-SUNBRINGER = "Challenge Charm 16"
+
+
+def true_final_challenge(info: dict) -> bool:
+    """A challenge that is the True Final Boss fight itself: its row's "true_final" (Sunbringer, ours)."""
+    return bool(info.get("true_final")) and "internal" in info
 
 
 def sunbringer_excluded(world: WildfrostWorld) -> bool:
     """
-    Sunbringer (beat the True Final Boss, both its checks) is filler only when the goal is a plain win
-    (any number of clans), which it lies past, or a single True Final Boss win, Overcranked or not,
-    which it is.
+    Sunbringer, or any challenge that is the True Final Boss fight (true_final_challenge), is filler only
+    when the goal is a plain win (any number of clans), which it lies past, or a single True Final Boss
+    win, Overcranked or not, which it is.
     """
     goal = world.options.goal
     return goal == goal.option_final_boss or world.options.clans_required == 1

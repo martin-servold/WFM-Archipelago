@@ -6,7 +6,7 @@ from BaseClasses import ItemClassification, LocationProgressType
 from ..data import CARDS, ITEMS, LOCATIONS
 from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, storm_bells_in_pool
 from ..items import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED
-from ..locations import CLANS, SUNBRINGER, included
+from ..locations import CLANS, included
 from ..rules import required_tribes
 from ..world import progression_direction
 from . import WildfrostTestBase
@@ -15,6 +15,8 @@ from . import WildfrostTestBase
 # group's cards evenly across its packs.
 PACK_SIZE = 3
 
+# Sunbringer's row: the challenge that is the True Final Boss fight ("true_final").
+SUNBRINGER = next(info for key, _, _, info in LOCATIONS if key == "challenge:Challenge Charm 16")
 
 # Spare "#2" checks are only in seeds short of room (locations.spare_checks), never in these tests.
 LOCATIONS = [row for row in LOCATIONS if not row[3].get("spare")]
@@ -192,6 +194,33 @@ class TestForceStormBells(WildfrostTestBase):
         self.assertFalse(self.can_reach_location("Victory (Snowdwellers)"))
         self.collect_by_name(charms("Basic", 1))
         self.assertTrue(self.can_reach_location("Victory (Snowdwellers)"))
+
+
+class TestLogicSection(WildfrostTestBase):
+    """Kits, bell steps, goals and Reverse come from base.wildfrost.json's "logic" (PLAN.md §10, phase 3)."""
+
+    def test_every_goal_has_an_entry(self) -> None:
+        from ..data import LOGIC
+        from ..options import Goal
+        self.assertEqual(set(LOGIC["goals"]), set(Goal.name_lookup.values()))
+
+    def test_bells_for_storm_points(self) -> None:
+        from ..rules import bells_for
+        self.assertEqual([bells_for(p) for p in (0, 2, 8, 10, 14, 20, 22)], [0, 1, 4, 5, 7, 10, STORM_BELL_LEVELS])
+        # A lowered True Final Boss threshold (an extension removed bells) carries up through it.
+        self.world.true_final_bells = 4
+        self.assertEqual([bells_for(p, self.world) for p in (8, 10, 14, 22)], [4, 4, 6, STORM_BELL_LEVELS])
+
+    def test_sunbringer_is_the_true_final_fight(self) -> None:
+        from ..rules import challenge_kit, rule_json
+        kit = rule_json(challenge_kit(SUNBRINGER, 0))
+        self.assertIn(["has", "storm_bell", TRUE_FINAL_BELLS_NEEDED], _leaves(kit))
+
+
+def _leaves(rule) -> list:
+    if rule[0] in ("and", "or"):
+        return [leaf for child in rule[1] for leaf in _leaves(child)]
+    return [rule]
 
 
 class TestForcedPackSteps(WildfrostTestBase):
@@ -919,10 +948,10 @@ class TestOlderSeedBells(WildfrostTestBase):
         self.world.options.goal.value = self.world.options.goal.option_true_final_boss
         self.assertEqual(storm_bells_in_pool(self.world), STORM_BELL_LEVELS)
         self.world.options.goal.value = self.world.options.goal.option_final_boss
-        self.assertTrue(included(self.world, {"internal": SUNBRINGER}))
+        self.assertTrue(included(self.world, SUNBRINGER))
         self.assertEqual(self.world.create_item(STORM_BELL).classification, ItemClassification.progression)
         self.world.goal_sized_bells = True
-        self.assertFalse(included(self.world, {"internal": SUNBRINGER}))
+        self.assertFalse(included(self.world, SUNBRINGER))
         self.assertEqual(self.world.create_item(STORM_BELL).classification, ItemClassification.filler)
 
 

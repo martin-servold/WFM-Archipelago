@@ -93,6 +93,8 @@ out["bellmod"] = {
     "kept": sorted(n for n in ("Challenge - Injure 3 companions", "Challenge - Ring the Troll Bell") if n in names),
     "troll_rule": brules.get("challenge:BellMod Challenge 1"),
     "beatable": bellmod.can_beat_game(CollectionState(bellmod)),
+    # The forcing table: (most levels, the first alternative's companion packs) per kit.
+    "bell_kits": [[levels, alts[0]["Companion"], alts[0]["Item"]] for levels, alts in bworld.fill_slot_data()["bell_kits"]],
 }
 out["vanilla_true_final_points"] = without.worlds[1].fill_slot_data()["true_final_points"]
 

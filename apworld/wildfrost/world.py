@@ -223,7 +223,7 @@ class WildfrostWorld(World):
             # DefaultFinalBossDeck).
             "disable_possessed_final_boss": bool(self.options.disable_possessed_final_boss),
             # Which bells Force Storm Bells Up To forces, by the run clan's packs.
-            "bell_kits": rules.bell_kits(),
+            "bell_kits": rules.bell_kits(self.true_final_bells),
             # For the client's tracker: what each location needs, in item keys (rules.rule_json).
             # Sent as one JSON string: Archipelago 0.6.8's Python clients (Universal Tracker, the Text
             # Client) drop any message nested over 16 deep (NetUtils._check_depth, AP PR #6378), and
