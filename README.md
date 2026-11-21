@@ -31,8 +31,8 @@ Double-click `wildfrost.apworld` to install it with the Archipelago Launcher, or
 
 ### 2. Make your options file
 
-In the Archipelago Launcher, run **Generate Template Options**. Edit `Wildfrost.yaml` from the Templates folder (set
-your slot name and options) and put it in Archipelago's `Players` folder along with the other players' files.
+In the Archipelago Launcher, open **Options Creator** and pick Wildfrost. Set your player name (your slot name) and
+options, then **Export Options** into Archipelago's `Players` folder, along with the other players' files.
 
 ### 3. Generate and host
 
@@ -93,6 +93,13 @@ The full game page, with what counts as a check and what logic expects, is
 - **H** opens a panel with your hints, the checks in logic now and what each pack holds (**Tab** switches, **PgUp**/
   **PgDn** pages).
 - Daily Voyages are switched off while playing a seed.
+
+## Other mods
+
+Content from other Wildfrost mods (cards, pets, tribes, battles, challenges, storm bells) can join a seed through the
+mod's extension file, `<Mod>.wildfrost.json`. Put the file in Archipelago's `custom_worlds` folder, add the mod's
+name under **Mod Content** in the Options Creator, and enable the mod in the game. Mod creators: see
+[EXTENSIONS.md](EXTENSIONS.md) for making one.
 
 ## Building from source
 
