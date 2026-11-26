@@ -165,9 +165,13 @@ namespace WildfrostArchipelago
                     client.Log("Disconnected");
                     NotifyOffline(lost: false);
                     break;
+                case "/generate":
+                    ExtensionMaker.Run(client, text.Substring(words[0].Length));
+                    break;
                 case "/help":
-                    client.Log("Local commands: /connect [server] [slot] [password], /disconnect, /help. " +
+                    client.Log("Local commands: /connect [server] [slot] [password], /disconnect, /generate, /help. " +
                                "Server commands start with ! (try !help); other text is chat.");
+                    client.Log("Mod creators: " + ExtensionMaker.Usage);
                     break;
                 default:
                     client.Log($"Unknown command {words[0]} (try /help)");

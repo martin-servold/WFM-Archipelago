@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
 
-from .content import CARDS, ITEMS, LEADERS, LOCATIONS, SHARES
+from .content import CARDS, ITEMS, LEADERS, LOCATIONS, SHARES, START_DECKS
 from .data import LOGIC
 from .groups import GROUPS
-from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS
+from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS, drawn_clans
 from .locations import BASE_CLANS, CLANS, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
@@ -41,10 +41,9 @@ def required_tribes(key: str, info: dict) -> set[str]:
     """Tribe items a location needs."""
     if not key.startswith("battle:"):
         return rule_tribes(info.get("rule"))
-    # A battle check is won while playing run_tribe. Some battles also only appear once a tribe is
-    # unlocked: vanilla locks them behind the tribe challenges (BattleLockData), and the client
-    # re-links each lock to the tribe item.
-    return {t for t in (info["run_tribe"], info["tribe"]) if t in CLANS}
+    # A battle check is won while playing run_tribe. Vanilla's tribe locks on battles (BattleLockData) are
+    # gone under AP (the user's call, 2026-11-25): the client lets every battle come up in every run.
+    return {info["run_tribe"]} & set(CLANS)
 
 
 # Kits, storm bell steps, goals, forcing and Reverse are the base file's "logic" section (PLAN.md §10,
@@ -309,10 +308,8 @@ FRENZY_CARDS = GROUPS["frenzy"]
 BLOCK_CARDS = GROUPS["block"]
 SACRIFICE_CARDS = GROUPS["sacrifice"]
 TEETH_CARDS = GROUPS["teeth"]
-DEMONIZE_CARDS = GROUPS["demonize"]
 SHROOM_CARDS = GROUPS["shroom"]
 SPICE_CARDS = GROUPS["spice"]
-HAZE_CARDS = GROUPS["haze"]
 # Each challenge's needs are its row's "rule" in base.wildfrost.json (PLAN.md §10, phase 2).
 
 
@@ -337,8 +334,9 @@ class CardRules:
                         for pack, cards in world.pack_contents.items() for card in cards}
         # A charm is its own item: those of this slot's game that no extension removes.
         removed = getattr(world, "removed", {}).get("charms", set())
+        drawn = drawn_clans(world)  # a clan no tribe here draws from has no charms in the seed
         self.pack_of.update({info["card"].removeprefix("card:"): name for _, name, _, info in ITEMS
-                             if info["kind"] == "Charm" and world.uses(info)
+                             if info["kind"] == "Charm" and world.uses(info) and info["clan"] in drawn
                              and info["card"].removeprefix("card:") not in removed})
 
     @staticmethod
@@ -359,12 +357,12 @@ class CardRules:
     def bell(self, bell: str):
         """
         A run that can ring this storm bell: enough Progressive Storm Bells for its points (each raises
-        the limit by 2; Reverse runs start with every bell). Impossible if this seed lacks the bell.
+        the limit by POINTS_PER_LEVEL; Reverse runs start with every bell). Impossible if this seed lacks the bell.
         """
         points = self.world.bell_points.get(bell)
         if points is None:
             raise Impossible(bell)
-        return None if self.reversed else Has(STORM_BELL, max(1, -(-points // 2)))
+        return None if self.reversed else Has(STORM_BELL, max(1, -(-points // POINTS_PER_LEVEL)))
 
     def drawn_by(self, clans) -> Rule | None:
         """
@@ -469,6 +467,8 @@ class CardRules:
             return self.applies(rule[1], "traits")
         if form == "clan_kit":
             return self.clan_kit(rule[1], region)
+        if form == "starts_with":  # a run of a tribe whose starting deck has the card
+            return self.either(*(lambda clan=clan: tribe_rule({clan}) for clan in self.starters(rule[1])))
         if form == "card":
             return self.card(rule[1])
         cards = GROUPS[rule[1]] if isinstance(rule[1], str) else rule[1]
@@ -504,22 +504,39 @@ class CardRules:
         clan = spec.get("clan")
         if clan and clan not in self.clans:
             raise Impossible(f"tribe {clan}")
-        return both(tribe_rule({clan}), kit(clan)) if clan else any_clan(kit, self.clans)
+        if clan:
+            return both(tribe_rule({clan}), kit(clan))
+        # "starts_with": only the slot's tribes whose starting deck has that card (the user's call, 2026-11-24).
+        return any_clan(kit, self.starters(spec["starts_with"]) if spec.get("starts_with") else self.clans)
+
+    def starters(self, card: str) -> list:
+        """
+        This slot's tribes whose starting deck has the card, or one of a group's cards (["starts_with", "clunkers"],
+        the user's call 2026-11-24); Impossible when none do.
+        """
+        cards = set(GROUPS[card]) if card in GROUPS else {card}
+        clans = [clan for clan in self.clans if cards & set(START_DECKS.get(clan, ()))]
+        if not clans:
+            raise Impossible(f"no tribe here starts with {card}")
+        return clans
 
     def battle_alternatives(self, battle: str) -> list:
         """Winning that battle (BattleData name), with any run tribe it's a check for, unless it was removed."""
         if battle in getattr(self.world, "removed", {}).get("battles", ()):
             return []
+        # Only this slot's rows: another extension's tribe can't win it here (found in review, 2026-11-24).
         return [battle_rule(key, info, self.extra, self.reversed, self.world.true_final_bells) for key, _, _, info in LOCATIONS
-                if key.startswith("battle:") and key.split(":")[2] == battle and not info.get("second")]
+                if key.startswith("battle:") and key.split(":")[2] == battle and not info.get("second")
+                and info["run_tribe"] in self.clans and self.world.uses(info)]
 
 
 def impossible_challenges(world: WildfrostWorld) -> set[str]:
     """
-    Challenges (by internal name) this slot can't do after its extensions' removals (PLAN.md §10), found
-    before the locations are made so they're left out (locations.included) and the pool fits.
+    Challenges (by internal name) this slot can't do after its extensions' removals (PLAN.md §10), or without
+    the tribes the Tribes option left out, found before the locations are made so they're left out
+    (locations.included) and the pool fits.
     """
-    if not any(getattr(world, "removed", {}).values()):
+    if not any(getattr(world, "removed", {}).values()) and not getattr(world, "tribes_limited", False):
         return set()
     cards = CardRules(world)
     impossible = set()
@@ -542,11 +559,16 @@ def impossible_challenges(world: WildfrostWorld) -> set[str]:
 # entry needs nothing.
 ITEM_KEY_BY_NAME = {name: key for key, name, _, _ in ITEMS}
 ITEM_NAME_BY_KEY = {key: name for key, name, _, _ in ITEMS}
-PACK_GROUPS = {
-    **{frozenset(clan_packs(clan, kind)): [clan, kind] for clan in CLANS for kind in PACK_KINDS},
+# The first clan to have a set wins, the vanilla clans first: a tribe with no charms (or packs) of its own has
+# exactly its shared clan's set, and the vanilla clan is the one every slot's client knows (found in review,
+# 2026-11-24: the tribe had taken Basic's charm rules over, vanilla slots included). Equal sets are the same items,
+# so either name counts the same.
+PACK_GROUPS: dict[frozenset, list] = {}
+for _clan in (*BASE_CLANS, *(c for c in CLANS if c not in BASE_CLANS)):
+    for _kind in PACK_KINDS:
+        PACK_GROUPS.setdefault(frozenset(clan_packs(_clan, _kind)), [_clan, _kind])
     # "": companion and item packs together (the forced extra's count).
-    **{frozenset(clan_packs(clan, "Companion") + clan_packs(clan, "Item")): [clan, ""] for clan in CLANS},
-}
+    PACK_GROUPS.setdefault(frozenset(clan_packs(_clan, "Companion") + clan_packs(_clan, "Item")), [_clan, ""])
 
 
 def rule_json(rule) -> list:

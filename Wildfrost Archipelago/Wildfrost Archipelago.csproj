@@ -400,6 +400,8 @@
     <Compile Include="ConnectPopup.cs" />
     <Compile Include="ContentDump.cs" />
     <Compile Include="DeathLinkHandler.cs" />
+    <Compile Include="ExtensionGenerator.cs" />
+    <Compile Include="ExtensionMaker.cs" />
     <Compile Include="GameSpeed.cs" />
     <Compile Include="HookSurvey.cs" />
     <Compile Include="LeaderReroll.cs" />
@@ -416,6 +418,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="PostBuild.ps1" />
+    <!-- The base game's content, for /generate (ExtensionMaker). -->
+    <EmbeddedResource Include="..\apworld\wildfrost\base.wildfrost.json">
+      <LogicalName>WildfrostArchipelago.base.wildfrost.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- Building the project file directly (not the .sln) leaves SolutionDir as "*Undefined*", and the

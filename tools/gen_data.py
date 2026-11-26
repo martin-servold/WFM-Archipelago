@@ -129,6 +129,16 @@ def _names(stacks: str) -> list[str]:
     return [re.sub(r" x-?\d+$", "", part.strip()) for part in re.split(r", (?=[^,]*? x-?\d+(?:,|$))", stacks) if part.strip()]
 
 
+# The Summon keyword (the user's call, 2026-11-24): a card that summons an ally, its own effect or the one it applies
+# ("Summon Beepop", "When Deployed Summon Wowee -> Instant Summon Fallow"). Adding a card to the hand ("... In Hand")
+# isn't summoning an ally. The client's /generate finds the same by effect type (ExtensionMaker.IsSummon).
+SUMMON = re.compile(r"(?:^|\s)Summon\s(?!.*\bIn Hand$)")
+
+
+def summons(effect: str) -> bool:
+    return any(SUMMON.search(part) for part in effect.split(" -> "))
+
+
 def effects(text: str) -> dict:
     """
     What each card and charm applies (the dump's Card and Charm effects): its attack effects, and what
@@ -146,6 +156,8 @@ def effects(text: str) -> dict:
             name, kind, attack, start, trait_list, scripts = m.groups()
             traits = set(_names(trait_list))
             applied = set(_names(attack))
+            if any(summons(e) for e in (*_names(attack), *_names(start))):
+                traits.add("Summon")
             for effect in _names(start):
                 if " -> " in effect:
                     applied.add(effect.split(" -> ", 1)[1])
@@ -160,6 +172,18 @@ def effects(text: str) -> dict:
     return out
 
 
+def start_decks(text: str) -> dict[str, list[str]]:
+    """Each clan's starting deck (the dump's "start deck" lines under ClassData; the user's call, 2026-11-24): its
+    CardData names, each once, in deck order. Empty for a dump from before they were written."""
+    decks, clan = {}, None
+    for line in section(text, "ClassData (clans) and reward pools").splitlines():
+        if m := re.match(r"^  (\S+) id=", line):
+            clan = m.group(1)
+        elif (m := re.match(r"^    start deck: (.*)$", line)) and clan:
+            decks[clan] = list(dict.fromkeys(n for n in m.group(1).split(", ") if n))
+    return decks
+
+
 def leaders(text: str) -> dict[str, list[str]]:
     try:
         body = section(text, "Clan leaders")
@@ -170,7 +194,7 @@ def leaders(text: str) -> dict[str, list[str]]:
 
 def parse(text: str) -> dict:
     """
-    A content dump's battles, challenges, cards and pets, as main() and tools/make_extension.py use them:
+    A content dump's battles, challenges, cards and pets, as main() uses them:
     battles are (key, name, area, boss, tribe lock, run tribe, true final, tier), challenges (key, name,
     internal, text), cards {name: (pool type, pool)}, titles {name: title}.
     """
@@ -231,7 +255,8 @@ def parse(text: str) -> dict:
 
     has_effects = "## Card effects" in text
     return {"titles": titles, "battle_names": battle_names, "battles": battles, "challenges": challenges,
-            "cards": cards, "pets": pets, "effects": effects(text) if has_effects else {}, "leaders": leaders(text)}
+            "cards": cards, "pets": pets, "effects": effects(text) if has_effects else {}, "leaders": leaders(text),
+            "start_decks": start_decks(text)}
 
 
 def rows_of(section) -> list:
@@ -340,8 +365,9 @@ def main():
     item_ids.update(assign(list(TRAPS), old_item, ITEM_TRAP))
     item_ids.update(assign(list(BOONS), old_item, ITEM_BOON))
 
-    locations = [(k, n, battle_ids[k], {"area": a, "boss": boss, "tribe": t, "run_tribe": rt, "true_final": tf, "tier": tier})
-                 for k, n, a, boss, t, rt, tf, tier in battles]
+    # The tribe lock isn't written: under AP every battle can come up in every run (the user's call, 2026-11-25).
+    locations = [(k, n, battle_ids[k], {"area": a, "boss": boss, "run_tribe": rt, "true_final": tf, "tier": tier})
+                 for k, n, a, boss, _, rt, tf, tier in battles]
     locations += [(k, n, challenge_ids[k], {"internal": i, "text": d}) for k, n, i, d in challenges]
     locations += [(k + "#2", n + " #2", second_ids[k + "#2"], {**info, "second": True})
                   for k, n, _, info in list(locations) if k in seconds]
@@ -382,7 +408,7 @@ def main():
         return "[\n" + "".join(f"    {r!r},\n" for r in rows) + "]"
 
     # What's written by hand in the file stays (PLAN.md §10, phase 2): each challenge's rule, region and
-    # filler-only flag, and the groups, as make_extension.py keeps a creator's.
+    # filler-only flag, and the groups, as /generate keeps a creator's (ExtensionGenerator.cs).
     hand = {r["key"]: {f: r[f] for f in HAND_FIELDS if f in r} for r in rows_of(old.get("ap_locations", []))}
     locations = [(k, n, i, {**info, **hand.get(k, {})}) for k, n, i, info in locations]
     new_challenges = [k for k, _, _, info in locations if k.startswith("challenge:") and "region" not in info
@@ -416,6 +442,8 @@ def main():
         # Each clan's leaders and what they apply ("applies" counts a clan whose leaders do it).
         "leaders": {clan: [{"key": leader, **applies(leader)} for leader in parsed["leaders"].get(clan, [])]
                     for clan in RUN_TRIBES},
+        # Each clan's starting deck, for ["starts_with", card] (the user's call, 2026-11-24).
+        "start_decks": {clan: parsed["start_decks"][clan] for clan in RUN_TRIBES if clan in parsed["start_decks"]},
         "ap_items": by([{"key": k, "name": n, "id": i, **info} for k, n, i, info in items], lambda r: r.pop("kind")),
         # A "#2" check is its original with another ID (the user's call, 2026-11-16): "twins" always come
         # with their original (bosses; charm challenges with New Challenges off), "spares" only when a seed

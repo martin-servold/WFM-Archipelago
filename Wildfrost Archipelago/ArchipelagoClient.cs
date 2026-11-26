@@ -309,11 +309,16 @@ namespace WildfrostArchipelago
                 }
                 catch (Exception e) when (e is Newtonsoft.Json.JsonException || e is FormatException || e is InvalidDataException)
                 {
+                    Debug.LogError(ArchipelagoMod.LogPrefix + "location_rules unreadable, the trackers show every check as in logic: " + e.Message);
                     rules = null; // unreadable: no rules, so every open check shows as in logic
                 }
             }
             return rules?.Properties().ToDictionary(p => p.Name, p => p.Value) ?? new Dictionary<string, JToken>();
         }
+
+        /// <summary>The most Gunzip unpacks (the user's call, 2026-11-24): a seed with several Terraria-sized
+        /// extensions is a few MB, so this only stops a gzip bomb from freezing the game.</summary>
+        private const int MaxUnpackedChars = 64 * 1024 * 1024;
 
         private static string Gunzip(string base64)
         {
@@ -321,7 +326,16 @@ namespace WildfrostArchipelago
             using (var gzip = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress))
             using (var reader = new StreamReader(gzip, Encoding.UTF8))
             {
-                return reader.ReadToEnd();
+                var text = new StringBuilder();
+                var buffer = new char[81920];
+                int read;
+                while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if (text.Length + read > MaxUnpackedChars)
+                        throw new InvalidDataException("over " + MaxUnpackedChars / (1024 * 1024) + " MB unpacked");
+                    text.Append(buffer, 0, read);
+                }
+                return text.ToString();
             }
         }
 
@@ -477,9 +491,11 @@ namespace WildfrostArchipelago
                         pending.Enqueue(LostMarker);
                     };
 
+                    var timer = System.Diagnostics.Stopwatch.StartNew();
                     LoginResult result = newSession.TryConnectAndLogin(
                         ConnectionConfig.Game, config.Slot, ItemsHandlingFlags.AllItems,
                         password: string.IsNullOrEmpty(config.Password) ? null : config.Password);
+                    Debug.Log(ArchipelagoMod.LogPrefix + $"Connect and login took {timer.ElapsedMilliseconds} ms; " + SocketDiagnostics(newSession));
 
                     if (result is LoginSuccessful success)
                     {
@@ -1106,6 +1122,42 @@ namespace WildfrostArchipelago
             }
             // Chat reads as normal text; the server's notices and other players' finds are dimmed.
             Post(message is ChatLogMessage ? message.ToString() : LogText.Color(LogText.Dim, message.ToString()));
+        }
+
+        /// <summary>
+        /// Which websocket the client library uses and, for websocket-sharp, the extensions the server agreed to
+        /// ("permessage-deflate; ..." when the connection is compressed). For Player.log, to check websocket compression
+        /// (MultiClient.Net PR #147, tested 2026-11-25); read by reflection, so it works with any library build.
+        /// </summary>
+        private static string SocketDiagnostics(ArchipelagoSession s)
+        {
+            try
+            {
+                object helper = s.Socket;
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
+                            | System.Reflection.BindingFlags.NonPublic;
+                for (var type = helper.GetType(); type != null; type = type.BaseType)
+                    foreach (var field in type.GetFields(flags))
+                    {
+                        object socket = field.GetValue(helper);
+                        if (socket == null) continue;
+                        string name = socket.GetType().FullName;
+                        if (name == "WebSocketSharp.WebSocket")
+                        {
+                            object Prop(string p) => socket.GetType().GetProperty(p)?.GetValue(socket, null);
+                            string extensions = Prop("Extensions") as string;
+                            return $"socket: websocket-sharp {socket.GetType().Assembly.GetName().Version}, compression {Prop("Compression")}, " +
+                                   $"extensions agreed: {(string.IsNullOrEmpty(extensions) ? "none" : extensions)}";
+                        }
+                        if (name == "System.Net.WebSockets.ClientWebSocket")
+                            return "socket: System.Net.WebSockets.ClientWebSocket (no compression)";
+                    }
+                return "socket: " + helper.GetType().FullName;
+            }
+            catch (Exception e)
+            {
+                return "socket: unknown (" + e.GetType().Name + ")";
+            }
         }
 
         // Socket thread. Names are looked up here, so the panel only reads strings.

@@ -39,7 +39,7 @@ def chosen_extensions(names) -> set[str]:
         if name not in extensions.LOADED:
             have = ", ".join(sorted(extensions.LOADED)) or "none"
             raise OptionError(f"Wildfrost: Mod Content {name!r} needs its extension file ({name}{extensions.SUFFIX}) in "
-                              f"Archipelago's custom_worlds folder; installed: {have}")
+                              f"your Archipelago folder, next to wildfrost.apworld; installed: {have}")
     return set(names)
 
 
@@ -51,9 +51,15 @@ def rebuilt_extensions(slot_data: Mapping[str, Any]) -> set[str]:
     for meta in slot_data.get("extensions", []):
         ext = extensions.LOADED.get(meta["mod"])
         if ext is None or ext.hash != meta["hash"]:
-            have = f"you have version {ext.version}" if ext else "it isn't installed"
+            if ext is not None:
+                same = " (a different file with the same version)" if ext.version == meta["version"] else ""
+                have = f"you have version {ext.version}{same}"
+            elif meta["mod"] in extensions.FAILED:
+                have = f"yours didn't load: {extensions.FAILED[meta['mod']]}"
+            else:
+                have = "it isn't installed"
             raise OptionError(f"Wildfrost: this seed used {meta['mod']} {meta['version']} ({meta['mod']}{extensions.SUFFIX}); "
-                              f"{have}. Install the same file in custom_worlds to track it.")
+                              f"{have}. Install the same file next to wildfrost.apworld to track it.")
     return {meta["mod"] for meta in slot_data.get("extensions", [])}
 
 
@@ -102,21 +108,51 @@ class WildfrostWorld(World):
     # The spare "#2" checks this seed has (locations.spare_checks; None until worked out), and how many
     # packs each extension group is held to when packs are made fuller.
     spare_checks: set[str] | None = None
+    # The "#2" checks a seed with room to spare dropped (locations.dropped_seconds; None until worked out).
+    dropped_seconds: set[str] | None = None
     pack_limits: dict
     # This slot's tribes by ClassData name: the vanilla three and its extensions' (the user's calls, 2026-11-16),
     # and the starting one's item name.
     tribes: tuple = locations.BASE_CLANS
+    tribes_limited: bool = False
     starting_tribe_name: str = ""
 
-    def set_tribes(self) -> None:
-        self.tribes = tuple(tribe for tribe, info in content.TRIBES.items() if self.uses(info))
+    def set_tribes(self, classes: list[str] | None = None) -> None:
+        """
+        This slot's tribes: the vanilla three and its extensions', narrowed by the Tribes option (the user's call,
+        2026-11-24: Modded Only runs a mod's tribes alone). Universal Tracker's rebuild passes slot_data's.
+        """
+        available = [tribe for tribe, info in content.TRIBES.items() if self.uses(info)]
+        if classes is not None:
+            tribes = [tribe for tribe in available if tribe in classes]
+        elif self.options.tribes == self.options.tribes.option_vanilla_only:
+            tribes = [tribe for tribe in available if tribe in locations.BASE_CLANS]
+        elif self.options.tribes == self.options.tribes.option_modded_only:
+            tribes = [tribe for tribe in available if tribe not in locations.BASE_CLANS]
+            if not tribes:
+                mods = ", ".join(sorted(self.extensions)) or "none"
+                raise OptionError(f"Wildfrost: {self.player_name}'s Tribes is Modded Only, but their Mod Content ({mods}) "
+                                  "adds no tribes")
+        else:
+            tribes = available
+        self.tribes = tuple(tribes)
+        # Fewer tribes than the slot's content has: their checks and the challenges that need them go.
+        self.tribes_limited = len(self.tribes) < len(available)
 
     def choose_starting_tribe(self) -> None:
-        """Starting Tribe: a vanilla one, or with Any Tribe one of the slot's tribes, an extension's included."""
+        """
+        Starting Tribe: a vanilla one, or with Any Tribe one of the slot's tribes, an extension's included. A
+        vanilla one the Tribes option left out gives way to one of the slot's tribes at random.
+        """
         if self.options.starting_tribe == self.options.starting_tribe.option_any_tribe:
             self.starting_tribe_name = locations.CLANS[self.random.choice(self.tribes)]
-        else:
-            self.starting_tribe_name = items.STARTING_TRIBES[self.options.starting_tribe.value]
+            return
+        tribe = locations.BASE_CLANS[self.options.starting_tribe.value]
+        if tribe not in self.tribes:
+            tribe = self.random.choice(self.tribes)
+            logging.info(f"Wildfrost: {self.player_name} starts with {locations.CLANS[tribe]}: their Tribes option "
+                         f"leaves out {items.STARTING_TRIBES[self.options.starting_tribe.value]}")
+        self.starting_tribe_name = locations.CLANS[tribe]
 
     def limit_clans_required(self) -> None:
         """Goal Clans Required counts the slot's tribes; past them, it means every one."""
@@ -130,7 +166,7 @@ class WildfrostWorld(World):
                                 name in extensions.LOADED[mod].bells for mod in self.extensions))}
         reachable = sum(self.bell_points.values())
         self.true_final_points = min(rules.TRUE_FINAL_POINTS, reachable)
-        self.true_final_bells = max(1, -(-self.true_final_points // 2))
+        self.true_final_bells = max(1, -(-self.true_final_points // rules.POINTS_PER_LEVEL))
         if self.true_final_points < rules.TRUE_FINAL_POINTS:
             logging.warning(f"Wildfrost: {self.player_name}'s storm bells reach {reachable} storm points with "
                             f"{', '.join(sorted(self.extensions))}, so the Lumin Vase (True Final Boss) appears at "
@@ -166,10 +202,11 @@ class WildfrostWorld(World):
             self.pack_contents = slot_data["packs"]
             self.starting_pet = slot_data["starting_pet"]
             self.extensions = rebuilt_extensions(slot_data)
-            self.set_tribes()
+            self.set_tribes([t["class"] for t in slot_data["tribes"]] if "tribes" in slot_data else None)
             self.removed = self.removals()
             self.set_bells()
             self.spare_checks = set(slot_data.get("spare_checks", []))
+            self.dropped_seconds = set(slot_data.get("dropped_seconds", []))
         else:
             self.extensions = chosen_extensions(self.options.mod_content.value)
             self.set_tribes()
@@ -187,7 +224,7 @@ class WildfrostWorld(World):
             elif self.options.goal == self.options.goal.option_true_final_boss:
                 # The pool only has the 5 bells it needs plus extras (items.storm_bells_in_pool), so
                 # forcing past what they reach (and the extra pack logic adds at 22) would never apply.
-                cap = 2 * (self.true_final_bells + self.options.extra_storm_bells.value)
+                cap = rules.POINTS_PER_LEVEL * (self.true_final_bells + self.options.extra_storm_bells.value)
                 self.options.force_storm_bells_up_to.value = min(self.options.force_storm_bells_up_to.value, cap)
             # Forcing past what this slot's storm bells can reach would hold every run back (an extension
             # removed bells, PLAN.md §10). 22 (Overcrank) rings every bell there is, so it stays.
@@ -251,6 +288,8 @@ class WildfrostWorld(World):
             "death_link": bool(self.options.death_link),
             # How hard a received death hits the leader (the client's DeathLinkHandler); 100 flees.
             "death_link_damage_percent": self.options.death_link_damage_percent.value,
+            # The Tribes option (0 all, 1 vanilla only, 2 modded only); "tribes" below lists the slot's.
+            "tribe_selection": self.options.tribes.value,
             "game_speed_up": bool(self.options.game_speed_up),
             "starting_pet": self.starting_pet,
             # Unlimited leader rerolls on the leader select screen (the client's LeaderReroll).
@@ -281,4 +320,6 @@ class WildfrostWorld(World):
                        for tribe in self.tribes],
             # Spare "#2" checks added for room (locations.spare_checks), for Universal Tracker's rebuild.
             "spare_checks": sorted(self.spare_checks or ()),
+            # "#2" checks dropped for a seed with room to spare (locations.dropped_seconds), for the same rebuild.
+            "dropped_seconds": sorted(self.dropped_seconds or ()),
         }

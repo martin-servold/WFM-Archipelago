@@ -181,11 +181,26 @@ class DeathLinkDamagePercent(Range):
     default = 100
 
 
+class Tribes(Choice):
+    """
+    Which tribes the seed has. All: the vanilla three and those of your Mod Content. Vanilla Only: Snowdwellers,
+    Shademancers and Clunkmasters (Mod Content still adds its cards, battles and challenges). Modded Only: only
+    your Mod Content's tribes; the vanilla ones stay locked, their checks are left out, and Starting Tribe picks
+    one of the modded ones if it names a vanilla tribe. Needs a mod with tribes.
+    """
+
+    display_name = "Tribes"
+    option_all = 0
+    option_vanilla_only = 1
+    option_modded_only = 2
+    default = 0
+
+
 class ModContent(OptionSet):
     """
     Content from other Wildfrost mods to include, by their extension's name (for example ["MyMod"]). Each needs
-    its mod's extension file (<Mod>.wildfrost.json) in Archipelago's custom_worlds folder on the computer that
-    generates, and the mod loaded in your game. Empty: the base game only.
+    its mod's extension file (<Mod>.wildfrost.json) in your Archipelago folder, next to wildfrost.apworld, on the
+    computer that generates, and the mod loaded in your game. Empty: the base game only.
     """
 
     display_name = "Mod Content"
@@ -203,6 +218,7 @@ class WildfrostOptions(PerGameCommonOptions):
     trap_percentage: TrapPercentage
     new_challenges: NewChallenges
     mod_content: ModContent
+    tribes: Tribes
     game_speed_up: GameSpeedUp
     leader_reroll: LeaderReroll
     disable_possessed_final_boss: DisablePossessedFinalBoss

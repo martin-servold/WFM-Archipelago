@@ -1,0 +1,434 @@
+{
+  "generatedBy": "waimea",
+  "startedAt": "2026-11-25T22:33:32.518Z",
+  "finishedAt": "2026-11-25T23:06:54.579Z",
+  "stoppedEarly": true,
+  "world": {
+    "module": "wildfrost",
+    "version": "0.4.1",
+    "game": "Wildfrost"
+  },
+  "lobby": {
+    "repository": "ionium-ap/Archipelago-lobby",
+    "commit": "62a8742d9c4d1823595b635bc33e6647a7976c80"
+  },
+  "pyodide": "0.29.4",
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 9,
+  "plan": {
+    "unitTests": true,
+    "jobs": 4,
+    "halvePairedJobs": false,
+    "bases": [
+      "0.6.7",
+      "0.6.8"
+    ],
+    "variants": [
+      {
+        "name": "default",
+        "enabled": true,
+        "runs": 5000
+      },
+      {
+        "name": "no-restrictive-starts",
+        "enabled": true,
+        "runs": 5000
+      },
+      {
+        "name": "check-collect-accessibility",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-determinism",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-gerpocalypse",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-indirect-conditions",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-item-location-count",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-lambda-capture",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-placement-item-location-refs",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-static-output-placement",
+        "enabled": true,
+        "runs": 500
+      },
+      {
+        "name": "check-ut",
+        "enabled": true,
+        "runs": 500
+      }
+    ],
+    "annotations": null,
+    "metaYaml": null,
+    "preset": "ci",
+    "seed": "8966460f0f23"
+  },
+  "ciTimeoutSeconds": 30,
+  "timeoutSeconds": 30,
+  "calibration": {
+    "runs": 12,
+    "matched": 12,
+    "localMedianSeconds": 0.27095,
+    "rawFactor": 0.9831972759576486,
+    "factor": 0.9831972759576486,
+    "clamped": false,
+    "bootSeconds": [
+      2.57,
+      2.58,
+      2.69,
+      2.64
+    ]
+  },
+  "calibrationError": null,
+  "calibrationReference": {
+    "label": "index-ci k8s-sandboxed runner",
+    "cpu": "Intel(R) Xeon(R) CPU E5-2690 v4 @ 2.60GHz"
+  },
+  "calibrationBase": "0.6.7",
+  "bases": [
+    {
+      "base": "0.6.7",
+      "archipelago": {
+        "repository": "ionium-ap/Archipelago",
+        "commit": "f04b3a3457efbca6fde29beaf70c7f7f0016cdc8",
+        "tag": "0.6.7-ionium.1"
+      },
+      "fuzzer": {
+        "repository": "ionium-ap/Archipelago-fuzzer",
+        "commit": "17227d793cc1088ae9be5fe97421e73bb683efdf"
+      },
+      "error": null,
+      "unitTests": {
+        "status": 0
+      },
+      "variants": [
+        {
+          "variant": "default",
+          "runs": 5000,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "no-restrictive-starts",
+          "runs": 5000,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-collect-accessibility",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-determinism",
+          "runs": 500,
+          "jobs": 4,
+          "paired": true,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-gerpocalypse",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-indirect-conditions",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-item-location-count",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-lambda-capture",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-placement-item-location-refs",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-static-output-placement",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        },
+        {
+          "variant": "check-ut",
+          "runs": 500,
+          "jobs": 4,
+          "paired": false,
+          "skipped": null,
+          "error": null,
+          "counters": {
+            "restarts": 0,
+            "heapRestarts": 0,
+            "timeouts": 0,
+            "fatal": 0,
+            "regeneratorFatal": 0,
+            "bootFailures": 0,
+            "retiredSlots": 0
+          }
+        }
+      ]
+    },
+    {
+      "base": "0.6.8",
+      "archipelago": {
+        "repository": "ionium-ap/Archipelago",
+        "commit": "2ae0d22870748b0502a539c926a933d4b6249931",
+        "tag": "0.6.8-ionium.1"
+      },
+      "fuzzer": {
+        "repository": "ionium-ap/Archipelago-fuzzer",
+        "commit": "53686ba34f9e8852cbe1970666a5f56fd6abf75a"
+      },
+      "error": null,
+      "unitTests": {
+        "status": "stopped"
+      },
+      "variants": [
+        {
+          "variant": "default",
+          "runs": 5000,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "no-restrictive-starts",
+          "runs": 5000,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-collect-accessibility",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-determinism",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-gerpocalypse",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-indirect-conditions",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-item-location-count",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-lambda-capture",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-placement-item-location-refs",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-static-output-placement",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        },
+        {
+          "variant": "check-ut",
+          "runs": 500,
+          "jobs": null,
+          "paired": false,
+          "skipped": "stopped before it started",
+          "error": null,
+          "counters": null
+        }
+      ]
+    }
+  ]
+}

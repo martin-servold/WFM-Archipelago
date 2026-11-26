@@ -62,7 +62,14 @@ def included(world: WildfrostWorld, info: dict, key: str = "") -> bool:
         internal = info.get("internal")
         if internal in removed["challenges"] or internal in getattr(world, "impossible", ()):
             return False
+    # A battle won with a tribe this slot doesn't have (the Tribes option). A challenge that needs one is
+    # impossible (rules.impossible_challenges).
+    if key.startswith("battle:") and info["run_tribe"] in CLANS and info["run_tribe"] not in world.tribes:
+        return False
     new_challenges = bool(world.options.new_challenges)
+    # "#2" checks dropped from a seed with room to spare (dropped_seconds).
+    if key in (getattr(world, "dropped_seconds", None) or ()):
+        return False
     # Spare "#2" checks are only in a seed whose items need the room (spare_checks).
     if is_spare(world, info) and key not in (getattr(world, "spare_checks", None) or ()):
         return False
@@ -122,7 +129,8 @@ def spare_checks(world: WildfrostWorld) -> set[str]:
 
 
 # Filler only: a row's "excluded" in base.wildfrost.json (Gnomebringer, decided by the user 2026-11-02:
-# too much luck; Reach a boss holding 200+ Bling, 2026-11-08: players may sink a run for it).
+# too much luck; Reach a boss holding 200+ Bling, 2026-11-08: players may sink a run for it; Bigger Hitter,
+# 2026-11-24: 100 damage in one hit is too hard to put a rule on, and a seed shouldn't wait on it).
 
 
 def true_final_challenge(info: dict) -> bool:
@@ -140,9 +148,42 @@ def sunbringer_excluded(world: WildfrostWorld) -> bool:
     return goal == goal.option_final_boss or world.options.clans_required == 1
 
 
+# A seed keeps at least this share of its checks for filler (Bling, boons, traps) when it drops "#2" checks.
+FILLER_FLOOR = 0.15
+
+
+def dropped_seconds(world: WildfrostWorld) -> set[str]:
+    """
+    The other way round from spare_checks (the user's calls, 2026-11-25): a seed with far more checks than items
+    drops "#2" checks, a whole group at a time so seeds stay consistent: the bosses' first, then the charm
+    challenges' (only there with New Challenges off). A group goes only if the filler left is still at least
+    FILLER_FLOOR of the checks; if the bosses' can't go, neither do the charm challenges'. Vanilla seeds keep
+    theirs (about 20% filler, 12% without the bosses' "#2"); mods with tribes (Companion Start) drop them.
+    """
+    world.dropped_seconds = set()
+    if world.spare_checks:  # short of room already
+        return set()
+    checks = [(key, info) for key, _, _, info in LOCATIONS if included(world, info, key)]
+    seconds = [(key, info) for key, info in checks if key.endswith("#2") and not is_spare(world, info)]
+    groups = ([key for key, _ in seconds if key.startswith("battle:")],
+              [key for key, info in seconds if info.get("internal", "").startswith("Challenge Charm ")])
+    real = items.real_item_count(world)
+    remaining = len(checks)
+    dropped: set[str] = set()
+    for group in groups:
+        left = remaining - len(group)
+        if not group or left - real < FILLER_FLOOR * left:
+            break
+        dropped.update(group)
+        remaining = left
+    return dropped
+
+
 def create_all_locations(world: WildfrostWorld) -> None:
     if getattr(world, "spare_checks", None) is None:  # Universal Tracker's rebuild has them from slot_data
         world.spare_checks = spare_checks(world)
+    if getattr(world, "dropped_seconds", None) is None:
+        world.dropped_seconds = dropped_seconds(world)
     for key, name, loc_id, info in LOCATIONS:
         if not included(world, info, key):
             continue

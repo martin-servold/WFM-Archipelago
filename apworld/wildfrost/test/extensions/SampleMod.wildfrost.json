@@ -3,7 +3,7 @@
   "mod": "SampleMod",
   "guid": "test.wildfrost.samplemod",
   "version": "1.0.0",
-  "id_block": 0,
+  "id_block": 4481164,
   "cards": {
     "companions": {
       "Basic": [
@@ -54,21 +54,21 @@
       {
         "key": "pack:General:Item:SampleMod-1",
         "name": "SampleMod General Item Pack 1",
-        "id": 100000,
+        "id": 8962428000,
         "clan": "General",
         "card_kind": "Item"
       },
       {
         "key": "pack:Basic:Companion:SampleMod-1",
         "name": "SampleMod Snowdweller Companion Pack 1",
-        "id": 100001,
+        "id": 8962428001,
         "clan": "Basic",
         "card_kind": "Companion"
       },
       {
         "key": "pack:Basic:Companion:SampleMod-Troll",
         "name": "SampleMod Troll Pack",
-        "id": 100003,
+        "id": 8962428003,
         "clan": "Basic",
         "card_kind": "Companion",
         "cards": [
@@ -80,7 +80,7 @@
       {
         "key": "charm:General:CardUpgradeSampleBog",
         "name": "Sample Bog Charm",
-        "id": 100002,
+        "id": 8962428002,
         "clan": "General",
         "card": "card:CardUpgradeSampleBog"
       }
@@ -91,7 +91,7 @@
       {
         "key": "battle:1:SampleTrolls:Basic",
         "name": "Area 2 Battle - The Sample Trolls (Snowdwellers)",
-        "id": 100000,
+        "id": 8962428000,
         "area": 1,
         "tier": 4,
         "boss": false,
@@ -101,7 +101,7 @@
       {
         "key": "battle:1:SampleTrolls:Magic",
         "name": "Area 2 Battle - The Sample Trolls (Shademancers)",
-        "id": 100001,
+        "id": 8962428001,
         "area": 1,
         "tier": 4,
         "boss": false,
@@ -111,7 +111,7 @@
       {
         "key": "battle:1:SampleTrolls:Clunk",
         "name": "Area 2 Battle - The Sample Trolls (Clunkmasters)",
-        "id": 100002,
+        "id": 8962428002,
         "area": 1,
         "tier": 4,
         "boss": false,
@@ -123,7 +123,7 @@
       {
         "key": "challenge:SampleMod Challenge 1",
         "name": "Challenge - Smash 5 Trolls",
-        "id": 100003,
+        "id": 8962428003,
         "text": "Smash 5 Trolls with the Sample Hammer",
         "region": "Area 2",
         "rule": [
@@ -134,7 +134,7 @@
       {
         "key": "challenge:SampleMod Challenge 2",
         "name": "Challenge - Apply 30 Bog",
-        "id": 100004,
+        "id": 8962428004,
         "text": "Apply 30 Bog",
         "rule": [
           "two_of",
@@ -144,7 +144,7 @@
       {
         "key": "challenge:SampleMod Challenge 3",
         "name": "Challenge - Win with 3 Shrooms",
-        "id": 100005,
+        "id": 8962428005,
         "text": "Win a run with 3 Shroom cards",
         "region": "Area 3",
         "rule": [
@@ -156,7 +156,7 @@
       {
         "key": "challenge:SampleMod Challenge 4",
         "name": "Challenge - Bog 3 enemies",
-        "id": 100007,
+        "id": 8962428007,
         "text": "Bog 3 enemies",
         "rule": [
           "applies",
@@ -165,7 +165,7 @@
       }
     ],
     "spares": {
-      "challenge:SampleMod Challenge 1": 100006
+      "challenge:SampleMod Challenge 1": 8962428006
     }
   },
   "groups": {

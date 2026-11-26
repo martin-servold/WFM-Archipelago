@@ -138,7 +138,7 @@ namespace WildfrostArchipelago
         }
 
         // Shroomers, Spikers, Bombers (Tribe 1) and Baby Berries, Inkers, Mimiks (Tribe 2) only
-        // appear once their tribe challenge is done. Under AP the tribe item unlocks them.
+        // appear once their tribe challenge is done. Under AP they're always there (ApMode.BattleLocked).
         [HarmonyPatch(typeof(BattleLockData), nameof(BattleLockData.IsLocked))]
         private static class BattleLock
         {
@@ -1461,6 +1461,62 @@ namespace WildfrostArchipelago
                 if (!ApMode.Active) return true;
                 __instance.StartCoroutine(ShowPrompt("Daily Voyages are off while playing Archipelago."));
                 return false;
+            }
+        }
+
+        // No tribe to play: every tribe received comes from a mod that isn't loaded (found by the user 2026-11-25,
+        // a Modded Only seed with Companion Start off). Tribe select is left with no classes and dealing the
+        // leaders divides by zero (the game's error screen). The town gate (Menu.StartGame) says which mods to
+        // turn on and stays in town; leader select is the backstop for the other ways in (Quick Restart).
+        private static string NoTribeText()
+        {
+            var loaded = new HashSet<string>(Bootstrap.Mods.Where(m => m != null && m.HasLoaded).Select(m => m.GUID));
+            var missing = (ArchipelagoMod.Client?.SeedExtensions ?? new List<ArchipelagoClient.SeedExtension>())
+                .Where(e => !loaded.Contains(e.Guid))
+                .Select(e => e.Mod)
+                .ToList();
+            return missing.Count > 0
+                ? $"None of your tribes is in the game: turn on {string.Join(", ", missing)} in the Mods screen to play them."
+                : "None of your tribes is in the game.";
+        }
+
+        // StartGame() and StartGame(string) both end in this overload; naming it is required (three share the name).
+        [HarmonyPatch(typeof(Menu), nameof(Menu.StartGame), typeof(GameMode))]
+        private static class NoTribeAtGate
+        {
+            private static bool Prefix(Menu __instance, GameMode gameMode)
+            {
+                if (!ApMode.Active || gameMode?.classes == null || !gameMode.mainGameMode) return true;
+                if (gameMode.classes.Any(c => c != null && !ApMode.TribeLocked(c.name))) return true;
+                __instance.StartCoroutine(ShowPrompt(NoTribeText()));
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(SelectLeader), "GenerateLeaders")]
+        private static class NoTribeToPlay
+        {
+            private static bool Prefix(ref IEnumerator __result)
+            {
+                if (!ApMode.Active) return true;
+                var screen = UnityEngine.Object.FindObjectOfType<CharacterSelectScreen>();
+                var classes = screen == null ? null
+                    : Traverse.Create(screen).Field("unlockedClassesForThisGameMode").GetValue<List<ClassData>>();
+                if (classes == null || classes.Count > 0) return true;
+                __result = BackToTown(screen);
+                return false;
+            }
+
+            private static IEnumerator BackToTown(CharacterSelectScreen screen)
+            {
+                // Behind the scene's fade-in (it waits on the leaders), so the prompt isn't seen here (the user's
+                // test 2026-11-25); it goes to the log, and the gate shows it once back in town.
+                ArchipelagoMod.Client?.Log(NoTribeText());
+                Traverse.Create(screen).Method("ReturnToMenu").GetValue();
+                // The screen's Start waits on this: ending would carry it on to the pet picker, which built its
+                // cards while the scene unloaded (a NullReferenceException in SelectStartingPet.CreateCard, the
+                // user's test 2026-11-25). Never ending stops it there; the coroutine goes with the scene.
+                while (true) yield return null;
             }
         }
 

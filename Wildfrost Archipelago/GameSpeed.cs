@@ -36,9 +36,17 @@ namespace WildfrostArchipelago
         {
             float factor = Factor;
             if (Mathf.Approximately(factor, applied)) return;
-            // Only from the plain running speed: leave a pause (0) or a slow motion running, and
-            // they come back through the patches below.
-            if (Mathf.Approximately(Time.timeScale, applied)) Time.timeScale = factor;
+            // Already in effect (the patches below scale what the game sets).
+            if (Mathf.Approximately(Time.timeScale, factor))
+            {
+                applied = factor;
+                return;
+            }
+            // Only from the plain running speed: leave a pause (0) or a slow motion running, and try again next
+            // frame. Marking it applied anyway lost the speed when it changed during a pause or a loading screen
+            // (the user's report, 2026-11-25: the saved 1.5x didn't take at game start until F6 went round).
+            if (!Mathf.Approximately(Time.timeScale, applied)) return;
+            Time.timeScale = factor;
             applied = factor;
         }
 

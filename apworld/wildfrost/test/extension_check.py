@@ -122,10 +122,23 @@ out["tribe"] = {
     "shell_rule": json.dumps(trules.get("challenge:Challenge Charm 5")),
     # Its True Final Boss row is the True Final Boss: not in this Final Boss goal seed.
     "true_final_battle": any(loc.name == "Area 3 Boss - True Final Boss (Bogfolk)" for loc in tribal.get_locations(1)),
+    # Its own battle in the True Final Boss's tier is a True Final Boss fight too (2026-11-24): not here either.
+    "own_true_final": sorted(loc.name for loc in tribal.get_locations(1) if "The Abyss" in loc.name),
 }
+# ["starts_with", card] (the user's call, 2026-11-24): the slot's tribes whose starting deck has it.
+from worlds.wildfrost import rules as starts_rules  # noqa: E402
+_cards = starts_rules.CardRules(tworld)
+out["tribe"]["starts_with"] = str(_cards.extension_rule(["starts_with", "SnowStick"]))
+out["tribe"]["starts_with_kit"] = str(_cards.extension_rule(["clan_kit", {"starts_with": "SnowStick", "companions": 1}]))
+try:
+    _cards.extension_rule(["starts_with", "NoSuchCard"])
+    out["tribe"]["starts_with_none"] = "possible"
+except starts_rules.Impossible:
+    out["tribe"]["starts_with_none"] = "impossible"
 tf_tribal = generate({"mod_content": ["TribeMod"], "goal": "true_final_boss"}, fill=False)
-out["tribe"]["true_final_rule"] = json.dumps(read_location_rules(
-    tf_tribal.worlds[1].fill_slot_data()["location_rules"]).get(f"battle:2:Final Final Boss:{TRIBE}"))
+tf_rules = read_location_rules(tf_tribal.worlds[1].fill_slot_data()["location_rules"])
+out["tribe"]["true_final_rule"] = json.dumps(tf_rules.get(f"battle:2:Final Final Boss:{TRIBE}"))
+out["tribe"]["own_true_final_rules"] = {k: json.dumps(v) for k, v in tf_rules.items() if "TribeMod.Abyss" in k}
 # Clans Required past the slot's tribes means every one; without the mod, the vanilla three.
 plain = generate({"clans_required": 5}, fill=False)
 out["tribe_without"] = {"clans_required": plain.worlds[1].options.clans_required.value,
@@ -135,6 +148,57 @@ out["tribe_without"] = {"clans_required": plain.worlds[1].options.clans_required
 out["any_tribe_starts"] = sorted({setup_multiworld(WildfrostWorld, gen_steps, seed=s, options={
     **BASE, "mod_content": ["TribeMod"], "starting_tribe": "any_tribe"}).worlds[1].fill_slot_data()["starting_tribe"]
     for s in range(1, 13)})
+
+from worlds.wildfrost import content as wf_content, items as wf_items, rules as wf_rules  # noqa: E402
+# The Tribes option (the user's call, 2026-11-24). Modded Only: Bogfolk alone, even with Starting Tribe Snowdwellers.
+VANILLA_NAMES = ("Snowdwellers", "Shademancers", "Clunkmasters")
+modded = generate({"mod_content": ["TribeMod"], "tribes": "modded_only", "clans_required": 3})
+mworld = modded.worlds[1]
+mslot = mworld.fill_slot_data()
+out["modded_only"] = {
+    "tribes": [t["class"] for t in mslot["tribes"]],
+    "starting": mslot["starting_tribe"],
+    "clans_required": mworld.options.clans_required.value,
+    "vanilla_items": sorted(i.name for i in [*modded.itempool, *modded.precollected_items[1]] if i.name in VANILLA_NAMES),
+    "vanilla_battles": sum(1 for loc in modded.get_locations(1) if any(f"({n})" in loc.name for n in VANILLA_NAMES)),
+    "bogfolk_battles": sum(1 for loc in modded.get_locations(1) if loc.name.endswith("(Bogfolk)")),
+    "victories": sorted(loc.name for loc in modded.get_locations(1) if loc.name.startswith("Victory")),
+    # Challenges whose rule needs a vanilla tribe outright can't be done here.
+    "tribe_challenges": sorted(n for k, n, _, info in wf_content.LOCATIONS if k.startswith("challenge:")
+                               and wf_rules.rule_tribes(info.get("rule")) & {"Basic", "Magic", "Clunk"}
+                               and n in {loc.name for loc in modded.get_locations(1)}),
+    "vanilla_tribe_challenges": sum(1 for k, _, _, info in wf_content.LOCATIONS if k.startswith("challenge:")
+                                    and wf_rules.rule_tribes(info.get("rule")) & {"Basic", "Magic", "Clunk"}),
+    "selection": mslot["tribe_selection"],
+    "pool_clans": sorted({i.name and wf_items.INFO_BY_NAME[i.name].get("clan") for i in modded.itempool
+                          if i.name in wf_items.INFO_BY_NAME and wf_items.INFO_BY_NAME[i.name]["kind"] in ("Pack", "Charm")}),
+    "beatable": modded.can_beat_game(CollectionState(modded)),
+    "pool_fits": len(modded.itempool) == len([loc for loc in modded.get_locations(1) if loc.address is not None]),
+}
+rebuilt_modded = setup_multiworld(WildfrostWorld, (), seed=99, options={**BASE, "mod_content": ["TribeMod"]})
+rebuilt_modded.re_gen_passthrough = {"Wildfrost": mslot}
+for step in ("generate_early", "create_regions", "create_items", "set_rules"):
+    call_all(rebuilt_modded, step)
+out["modded_only"]["rebuild_same"] = {loc.name for loc in rebuilt_modded.get_locations(1)} == \
+    {loc.name for loc in modded.get_locations(1)}
+# Vanilla Only: TribeMod's content stays, its tribe doesn't.
+vanilla = generate({"mod_content": ["TribeMod"], "tribes": "vanilla_only", "starting_tribe": "any_tribe"})
+vslot = vanilla.worlds[1].fill_slot_data()
+out["vanilla_only"] = {
+    "tribes": [t["class"] for t in vslot["tribes"]],
+    "starting": vslot["starting_tribe"],
+    "bogfolk": sum(1 for loc in vanilla.get_locations(1) if "Bogfolk" in loc.name)
+               + sum(1 for i in vanilla.itempool if i.name == "Bogfolk"),
+    "mod_challenges": sorted(loc.name for loc in vanilla.get_locations(1)
+                             if loc.name in ("Challenge - Win as Bogfolk", "Challenge - Apply 20 Bog")),
+    "beatable": vanilla.can_beat_game(CollectionState(vanilla)),
+}
+# Modded Only with a mod that has no tribes is an error.
+try:
+    generate({"mod_content": ["SampleMod"], "tribes": "modded_only"}, fill=False)
+    out["modded_only_no_tribes"] = None
+except OptionError as e:
+    out["modded_only_no_tribes"] = str(e)
 
 out["vanilla_true_final_points"] = without.worlds[1].fill_slot_data()["true_final_points"]
 

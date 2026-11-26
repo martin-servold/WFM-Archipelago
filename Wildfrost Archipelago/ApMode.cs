@@ -241,7 +241,14 @@ namespace WildfrostArchipelago
                 cardTitles = titles;
             }
             string name = cardKey.Substring("card:".Length);
-            return cardTitles.TryGetValue(name, out string title) && !string.IsNullOrEmpty(title) ? title : name;
+            if (cardTitles.TryGetValue(name, out string title) && !string.IsNullOrEmpty(title)) return title;
+            // Not there when the titles were first read: another mod's cards can load later (the user's report,
+            // 2026-11-25: Pokefrost cards showed as websiteofsites.wildfrost.pokefrost.slowpoke). Look it up again.
+            title = SafeTitle(() => AddressableLoader.Get<CardData>("CardData", name)?.title)
+                    ?? SafeTitle(() => AddressableLoader.Get<CardUpgradeData>("CardUpgradeData", name)?.title);
+            if (string.IsNullOrEmpty(title)) return name;
+            cardTitles[name] = title;
+            return title;
         }
 
         private static string SafeTitle(System.Func<string> title)
@@ -504,8 +511,12 @@ namespace WildfrostArchipelago
         private static Dictionary<string, string> clanNames = new Dictionary<string, string>(VanillaClanNames);
         private static Dictionary<string, string> tribeShares = new Dictionary<string, string>();
 
-        /// <summary>Pack groups for the tracker: General, then each of the seed's tribes.</summary>
-        public static IEnumerable<string> PackClans => new[] { "General" }.Concat(clanNames.Keys);
+        /// <summary>Pack groups for the tracker: General, the vanilla clans the seed's tribes draw from (their own,
+        /// or shared: a Modded Only seed has no vanilla tribe but still their packs; 2026-11-24), then the
+        /// seed's other tribes.</summary>
+        public static IEnumerable<string> PackClans => new[] { "General" }
+            .Concat(VanillaClanNames.Keys.Where(c => clanNames.ContainsKey(c) || tribeShares.ContainsValue(c)))
+            .Concat(clanNames.Keys.Where(c => !VanillaClanNames.ContainsKey(c)));
 
         /// <summary>The seed's tribes by ClassData name.</summary>
         public static IEnumerable<string> SeedTribeClasses => clanNames.Keys;
@@ -592,10 +603,11 @@ namespace WildfrostArchipelago
             && !received.Contains("tribe:" + className);
 
         /// <summary>Null when the lock isn't one of the tribe locks (then vanilla decides).</summary>
+        // Under AP no battle waits for a tribe (the user's call, 2026-11-25): every battle can come up in every
+        // run, as the apworld's logic expects. Older seeds' logic waited for the tribe item, so this only opens
+        // their battles sooner.
         public static bool? BattleLocked(string challengeName) =>
-            challengeName != null && TribeOfChallenge.TryGetValue(challengeName, out string tribe)
-                ? TribeLocked(tribe)
-                : (bool?)null;
+            challengeName != null && TribeOfChallenge.ContainsKey(challengeName) ? false : (bool?)null;
 
         // A pet with no unlock (Wolfie, Snoof) is always there, unless the seed has it as an item (from
         // 2026-11-02 every pet is one).

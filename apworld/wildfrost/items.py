@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Item, ItemClassification
 
-from .content import CARDS, ITEMS
+from .content import CARDS, ITEMS, SHARES
 from .data import LOGIC
 
 if TYPE_CHECKING:
@@ -100,6 +100,16 @@ def create_item(world: WildfrostWorld, name: str) -> WildfrostItem:
     return WildfrostItem(name, classification, ITEM_NAME_TO_ID[name], world.player)
 
 
+def drawn_clans(world: WildfrostWorld) -> set[str]:
+    """
+    The reward pools this slot's tribes draw from: General, each tribe's own, and the vanilla clan an extension's
+    tribe shares. A clan none of them draws from (the Tribes option left its tribe out) has no packs or charms in
+    the seed (the user's call, 2026-11-24).
+    """
+    tribes = getattr(world, "tribes", ())
+    return {"General", *tribes, *(SHARES[t] for t in tribes if t in SHARES)}
+
+
 def fill_packs(world: WildfrostWorld) -> dict[str, list[str]]:
     """
     Deal each clan's cards of one kind into that group's packs, shuffled per seed. The cards are
@@ -110,8 +120,9 @@ def fill_packs(world: WildfrostWorld) -> dict[str, list[str]]:
     removed = {"card:" + name for name in world.removed["cards"]}
     # An extension's cards go only into its own packs (the user's call, 2026-11-15), so each mod
     # (None: the base game) deals its own clan and kind groups. Cards an extension removes aren't dealt.
+    drawn = drawn_clans(world)
     groups = dict.fromkeys((*key.split(":")[1:3], INFO_BY_KEY[key].get("ext")) for key in PACK_KEYS
-                           if world.uses(INFO_BY_KEY[key]))
+                           if world.uses(INFO_BY_KEY[key]) and INFO_BY_KEY[key]["clan"] in drawn)
     for clan, kind, mod in groups:
         cards = [key for key, _, info in CARDS if info["clan"] == clan and info["kind"] == kind
                  and info.get("ext") == mod and key not in removed]
@@ -161,8 +172,10 @@ def in_seed(world: WildfrostWorld, name: str) -> bool:
     info = INFO_BY_NAME[name]
     if not world.uses(info):
         return False
+    if info["kind"] == "Tribe":  # the Tribes option can leave some out
+        return ITEM_KEY_BY_NAME[name].removeprefix("tribe:") in world.tribes
     if info["kind"] == "Charm":
-        return info["card"].removeprefix("card:") not in world.removed["charms"]
+        return info["card"].removeprefix("card:") not in world.removed["charms"] and info["clan"] in drawn_clans(world)
     if info["kind"] == "Pack":
         return bool(world.pack_contents.get(ITEM_KEY_BY_NAME[name]))
     return True

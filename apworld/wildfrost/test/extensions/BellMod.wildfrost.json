@@ -3,14 +3,14 @@
   "mod": "BellMod",
   "guid": "test.wildfrost.bellmod",
   "version": "1.0.0",
-  "id_block": 2,
+  "id_block": 972093025,
   "cards": {},
   "ap_locations": {
     "challenges": [
       {
         "key": "challenge:BellMod Challenge 1",
         "name": "Challenge - Ring the Troll Bell",
-        "id": 104000,
+        "id": 1944186150000,
         "text": "Win a battle with the Troll Bell rung",
         "rule": [
           "bell",

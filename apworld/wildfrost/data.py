@@ -49,6 +49,8 @@ CARDS = sorted(((e["key"], e["name"], {"kind": KIND_OF_SECTION[section], "clan":
                 for section, clans in _doc["cards"].items() for clan, entries in clans.items() for e in entries),
                key=lambda row: row[0])
 LEADERS: dict[str, list[dict]] = {clan: list(leaders) for clan, leaders in _doc.get("leaders", {}).items()}
+# Each clan's starting deck (CardData names), for ["starts_with", card].
+START_DECKS: dict[str, list[str]] = {clan: list(cards) for clan, cards in _doc.get("start_decks", {}).items()}
 BELLS = [(b["name"], b["points"], b["title"]) for b in _doc["bells"]]
 GROUPS: dict[str, list[str]] = {g: list(v) for g, v in _doc.get("groups", {}).items()}
 

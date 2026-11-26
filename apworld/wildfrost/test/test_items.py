@@ -1,19 +1,26 @@
 import json
 import unittest
+from unittest import mock
 
 from BaseClasses import ItemClassification, LocationProgressType
 
 from ..data import CARDS, ITEMS, LOCATIONS
-from ..items import PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, storm_bells_in_pool
+from ..items import INFO_BY_KEY, INFO_BY_NAME, PACK_KEYS, PET_NAMES, STORM_BELL, STORM_BELL_LEVELS, pet_names, storm_bells_in_pool
 from ..items import TRUE_FINAL_BELLS as TRUE_FINAL_BELLS_NEEDED
 from ..locations import CLANS, included
 from ..rules import required_tribes
 from ..world import progression_direction, read_location_rules
 from . import WildfrostTestBase
+from .. import items as items_module, locations as locations_module
 
-# The tools (gen_data.py, make_extension.py) write one pack row per 3 cards; generation just deals a
+# The tools (gen_data.py, /generate) write one pack row per 3 cards; generation just deals a
 # group's cards evenly across its packs.
 PACK_SIZE = 3
+
+# The tables above list every loaded extension's content too (whatever is in custom_worlds when the tests run);
+# these test slots pick none, so they compare against the base game's share, and check the rest stays out.
+BASE_PETS = [name for name in PET_NAMES if "ext" not in INFO_BY_NAME[name]]
+BASE_PACKS = [key for key in PACK_KEYS if "ext" not in INFO_BY_KEY[key]]
 
 # Sunbringer's row: the challenge that is the True Final Boss fight ("true_final").
 SUNBRINGER = next(info for key, _, _, info in LOCATIONS if key == "challenge:Challenge Charm 16")
@@ -35,7 +42,7 @@ class TestDefaultPool(WildfrostTestBase):
 
     def test_every_card_in_exactly_one_pack(self) -> None:
         packs = self.world.pack_contents
-        self.assertEqual(sorted(packs), sorted(PACK_KEYS))
+        self.assertEqual(sorted(packs), sorted(BASE_PACKS))
         dealt = [card for cards in packs.values() for card in cards]
         # Charms are items one by one; every other card is in exactly one pack.
         self.assertEqual(sorted(dealt), sorted(key for key, _, info in CARDS if info["kind"] != "Charm"))
@@ -63,7 +70,9 @@ class TestDefaultPool(WildfrostTestBase):
                 self.assertIn(name, pool)
 
     def test_tribe_locations_need_tribe(self) -> None:
-        for tribe, item in CLANS.items():
+        self.assertEqual(self.world.tribes, ("Basic", "Magic", "Clunk"))  # no extension picked
+        for tribe in self.world.tribes:
+            item = CLANS[tribe]
             if item == "Snowdwellers":
                 continue  # the starting tribe here; TestStartingTribe covers it
             gated = [name for key, name, _, info in LOCATIONS
@@ -71,8 +80,13 @@ class TestDefaultPool(WildfrostTestBase):
                      and not info.get("spare")]
             gated.append(f"Victory ({item})")
             if item == "Clunkmasters":
-                # Toaster and the Gunk Bugs fight are both Clunkmaster.
-                gated += with_seconds(["Challenge - Minimalist", "Challenge - Hoarder"])
+                # Minimalist isn't: the Gunk Bugs fight comes up in any run since battles lost their tribe locks
+                # (the user's call, 2026-11-25).
+                gated += with_seconds(["Challenge - Hoarder"])
+            if item == "Shademancers":
+                # Every sacrifice card and every Mask is a Shademancer card (the user's rules, 2026-11-24: the cards,
+                # not the tribe, so a modded tribe sharing their pools can do them too).
+                gated += with_seconds(["Challenge - Ritual", "Challenge - Summon 50 allies"])
             with self.subTest(tribe=tribe):
                 self.assertTrue(gated)
                 self.assertAccessDependency(gated, [[item]])
@@ -81,12 +95,12 @@ class TestDefaultPool(WildfrostTestBase):
 class TestBattlesPerTribe(WildfrostTestBase):
     def test_every_battle_once_per_tribe(self) -> None:
         battles = [info for key, _, _, info in LOCATIONS if key.startswith("battle:")]
-        self.assertEqual({info["run_tribe"] for info in battles}, {"Basic", *CLANS})
+        self.assertEqual({info["run_tribe"] for info in battles}, set(self.world.tribes))
         self.assertEqual(len(battles) % 3, 0)
 
     def test_snowdweller_battles_need_nothing(self) -> None:
         for key, name, _, info in LOCATIONS:
-            if key.startswith("battle:") and info["run_tribe"] == "Basic" and not info["tribe"] and info["tier"] <= 4:
+            if key.startswith("battle:") and info["run_tribe"] == "Basic" and info["tier"] <= 4:
                 with self.subTest(location=name):
                     self.assertTrue(self.can_reach_location(name))
 
@@ -259,20 +273,58 @@ class TestForceStormBellsOdd(WildfrostTestBase):
         self.assertEqual(self.world.fill_slot_data()["force_storm_bells_up_to"], 14)
 
 
+class TestSecondsKept(WildfrostTestBase):
+    """A vanilla seed keeps its "#2" checks: without the bosses' it'd have under 15% filler (2026-11-25)."""
+
+    def test_vanilla_keeps_its_seconds(self) -> None:
+        self.assertEqual(self.world.dropped_seconds, set())
+        self.assertTrue(any(loc.name.endswith(" #2") for loc in self.multiworld.get_locations(self.player)))
+
+
+class TestSecondsDropped(WildfrostTestBase):
+    """Dropping "#2" checks with room to spare (the user's calls, 2026-11-25): whole groups, bosses' first, then the
+    charm challenges', each only if 15% of the checks stay filler. Real item counts are made up here."""
+    options = {**WildfrostTestBase.options, "new_challenges": False}
+
+    def dropped_with(self, real: int) -> set[str]:
+        with mock.patch.object(items_module, "real_item_count", return_value=real):
+            try:
+                return locations_module.dropped_seconds(self.world)
+            finally:
+                self.world.dropped_seconds = set()
+
+    def test_groups(self) -> None:
+        self.world.dropped_seconds = set()
+        checks = [key for key, _, _, info in LOCATIONS if included(self.world, info, key)]
+        bosses = {k for k in checks if k.startswith("battle:") and k.endswith("#2")}
+        charms = {k for k in checks if k.startswith("challenge:Challenge Charm ") and k.endswith("#2")}
+        self.assertTrue(bosses and charms)
+        after_bosses, after_both = len(checks) - len(bosses), len(checks) - len(bosses) - len(charms)
+        self.assertEqual(self.dropped_with(10), bosses | charms)
+        # Room for the bosses' group but not the charm challenges' too: only the bosses' go.
+        real = int(after_both * (1 - locations_module.FILLER_FLOOR)) + 1
+        self.assertLessEqual(real, after_bosses * (1 - locations_module.FILLER_FLOOR))
+        self.assertEqual(self.dropped_with(real), bosses)
+        # No room for the bosses' group: nothing goes, the charm challenges' neither.
+        self.assertEqual(self.dropped_with(int(after_bosses * (1 - locations_module.FILLER_FLOOR)) + 1), set())
+
+
 class TestRandomStartingPet(WildfrostTestBase):
     def test_one_pet_precollected_not_in_pool(self) -> None:
         pet = self.world.starting_pet
-        self.assertIn(pet, PET_NAMES)
+        self.assertEqual(pet_names(self.world), BASE_PETS)  # no extension picked
+        self.assertIn(pet, BASE_PETS)
         self.assertIn(pet, [i.name for i in self.multiworld.precollected_items[self.player]])
         pool = [i.name for i in self.multiworld.itempool]
         self.assertNotIn(pet, pool)
-        self.assertEqual(sorted(p for p in PET_NAMES if p != pet), sorted(p for p in pool if p in PET_NAMES))
+        # Every other pet is in the pool, and no unpicked extension's pet.
+        self.assertEqual(sorted(p for p in BASE_PETS if p != pet), sorted(p for p in pool if p in PET_NAMES))
         self.assertEqual(self.world.fill_slot_data()["starting_pet"], pet)
 
     def test_snoof_is_a_pet(self) -> None:
         # Snoof (Wolfie) is always there in vanilla; here it's the 7th pet, and can be the starting one.
-        self.assertIn("Snoof Pet", PET_NAMES)
-        self.assertEqual(len(PET_NAMES), 7)
+        self.assertIn("Snoof Pet", BASE_PETS)
+        self.assertEqual(len(BASE_PETS), 7)
 
 
 class TestLeaderReroll(WildfrostTestBase):
@@ -372,7 +424,7 @@ def charms(clan: str, n: int) -> list[str]:
 
 
 SNOW_LATE = [name for key, name, _, info in LOCATIONS
-             if key.startswith("battle:") and info["run_tribe"] == "Basic" and not info["tribe"]
+             if key.startswith("battle:") and info["run_tribe"] == "Basic"
              and 5 <= info["tier"] <= 7]
 
 
@@ -508,10 +560,9 @@ class TestCardChallenges(WildfrostTestBase):
         self.collect_card("Snowcake")
         self.assertTrue(self.can_reach_location("Challenge - Snowball Fight"))
 
-    def test_bigger_hitter_needs_spice_stones(self) -> None:
-        self.assertFalse(self.can_reach_location("Challenge - Bigger Hitter"))
-        self.collect_card("SpiceStones")
-        self.assertTrue(self.can_reach_location("Challenge - Bigger Hitter"))
+    def test_bigger_hitter_is_filler_only(self) -> None:
+        """Filler only, like Gnomebringer (the user's call, 2026-11-24): too hard to put a rule on."""
+        self.assert_filler_only("Bigger Hitter", True)
 
     def test_big_hitter_needs_a_pair(self) -> None:
         location = "Challenge - Big Hitter"
@@ -539,9 +590,10 @@ class TestCardChallenges(WildfrostTestBase):
         self.assertTrue(self.can_reach_location(location))
 
     def test_minimalist_through_gunk_bugs(self) -> None:
-        # The Gunk Bugs are an Area 3 fight, unlocked with Clunkmasters: a run that gets there.
+        # The Gunk Bugs are an Area 3 fight, in any run (no tribe lock since 2026-11-25): a run that gets there.
         location = "Challenge - Minimalist"
-        self.collect_by_name(["Clunkmasters", pack("General", "Companion"), pack("General", "Item")])
+        self.assertFalse(self.can_reach_location(location))
+        self.collect_by_name([pack("General", "Companion"), pack("General", "Item")])
         self.assertTrue(self.can_reach_location(location))
 
     def test_companion_and_item_pack_challenges(self) -> None:
@@ -595,43 +647,28 @@ class TestCardChallenges(WildfrostTestBase):
                 self.assertTrue(self.can_reach_location(location))
                 self.remove_by_name(["Shademancers"] + charms("General", 3) + charms("Magic", 1))
 
-    def test_demonized_with_loki_or_cards(self) -> None:
+    def test_demonized_by_what_applies_it(self) -> None:
+        """["applies", "Demonize"] (the user's call, 2026-11-24, in place of the demonize group): Snowdweller and
+        Shademancer leaders apply it, so the Snowdwellers start with it; the rule lists the cards and the Loki pet too."""
         location = "Challenge - Kill 3 Demonized enemies"
-        self.assertFalse(self.can_reach_location(location))
-        loki = self.world.create_item("Loki Pet")  # fresh: it may be the starting pet, out of the pool
-        self.collect(loki)
         self.assertTrue(self.can_reach_location(location))
-        self.remove(loki)
-        for card in ("Demonheart", "Dimona", "TotemOfTheGoat"):
-            with self.subTest(card=card):
-                pack_name = self.pack_name(card)
-                self.collect_by_name(pack_name)
-                self.assertTrue(self.can_reach_location(location))
-                self.remove_by_name(pack_name)
+        rule = json.dumps(self.world.location_rules["challenge:Challenge Pet 2"])
+        for need in ("tribe:Basic", "tribe:Magic", "pet:DemonPet"):
+            with self.subTest(need=need):
+                self.assertIn(need, rule)
 
     def test_hoarder(self) -> None:
+        """A Trash floor (the junk leaders or Trash cards) and a draw source; or starting with Junkhead and one more draw
+        or Trash effect (the user's call, 2026-11-24). A Clunkmaster run has both: Junkhead, and its junk leaders."""
         location = "Challenge - Hoarder"
         self.collect_card("CardUpgradePunchfist")
-        self.assertFalse(self.can_reach_location(location))  # needs a Clunkmaster run
+        self.assertFalse(self.can_reach_location(location))  # no Trash and no Junkhead as Snowdwellers
+        self.remove_by_name([self.pack_name("CardUpgradePunchfist")])
         self.collect_by_name("Clunkmasters")
         self.assertTrue(self.can_reach_location(location))
-        self.remove_by_name([self.pack_name("CardUpgradePunchfist")])
-        self.assertFalse(self.can_reach_location(location))
-        sneezle = self.world.create_item("Sneezle Pet")  # fresh: it may be the starting pet, out of the pool
-        self.collect(sneezle)
-        self.assertTrue(self.can_reach_location(location))
-        self.remove(sneezle)
-        # Cards that do it alone; a pack dealt one of them beside the card under test passes alone too.
-        solo = ("LuminCat", "Bumblebee", "BlazeTea")
-        for alone, partner in (("Badoo", "CardUpgradeCake"), ("CardUpgradeBoost", "Gearhead")):
-            with self.subTest(pair=(alone, partner)):
-                self.collect_card(alone)
-                pack = next((cards for cards in self.world.pack_contents.values() if f"card:{alone}" in cards), [])
-                shares = self.pack_name(alone) == self.pack_name(partner) or any(f"card:{c}" in pack for c in solo)
-                self.assertEqual(self.can_reach_location(location), shares)
-                self.collect_card(partner)
-                self.assertTrue(self.can_reach_location(location))
-                self.remove_by_name(list({self.pack_name(alone), self.pack_name(partner)}))
+        rule = json.dumps(self.world.location_rules["challenge:Challenge Charm 18"])
+        self.assertIn("tribe:Clunk", rule)
+        self.assertIn("pet:DrawPet", rule)
 
     def test_counted_pets_are_progression(self) -> None:
         # Made fresh: either one may be the starting pet, and then it isn't in the pool.
@@ -659,13 +696,13 @@ class TestStartingTribe(WildfrostTestBase):
         # and leaders apply (Shroom, Shell: ["applies", ...]).
         gated += ["Victory (Snowdwellers)"] + with_seconds(["Challenge - Tough Nut", "Challenge - Toxic", "Challenge - Bigger Hitter",
                                                             "Challenge - Kill 15 enemies with Shroom", "Challenge - Apply 60 Shell"])
-        self.assertIn("Challenge - One Punch", gated)
-        self.assertIn("Challenge - Block 10 hits with Clunkers", gated)
+        # One Punch needs the Scrappy Sword, which only the Snowdwellers start with (["starts_with", "Sword"]).
+        gated += with_seconds(["Challenge - One Punch"])
         self.assertAccessDependency(gated, [["Snowdwellers"]])
 
     def test_clunkmaster_battles_need_nothing(self) -> None:
         for key, name, _, info in LOCATIONS:
-            if key.startswith("battle:") and info["run_tribe"] == "Clunk" and not info["tribe"] and info["tier"] <= 4:
+            if key.startswith("battle:") and info["run_tribe"] == "Clunk" and info["tier"] <= 4:
                 with self.subTest(location=name):
                     self.assertTrue(self.can_reach_location(name))
 

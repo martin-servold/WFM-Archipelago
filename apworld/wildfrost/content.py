@@ -13,13 +13,17 @@ from . import data, extensions
 from .extensions import ExtensionError
 from .groups import GROUPS
 
+# The base game's groups, before any extension adds to them: an extension's rules may name these and its own
+# (found in review, 2026-11-24: checking against GROUPS let a rule name an earlier file's new group).
+BASE_GROUPS = {group: list(members) for group, members in GROUPS.items()}
+
 
 def _check_references(ext: extensions.Extension) -> None:
     item_keys = {r[0] for r in data.ITEMS} | {r[0] for r in ext.items}
     cards = {r[0].removeprefix("card:") for r in data.CARDS} | {r[0].removeprefix("card:") for r in ext.cards}
     cards |= {info["card"].removeprefix("card:") for rows in (data.ITEMS, ext.items) for _, _, _, info in rows
               if info["kind"] == "Charm"}
-    groups = set(GROUPS) | set(ext.groups)
+    groups = set(BASE_GROUPS) | set(ext.groups)
     bells = {name for name, _, _ in data.BELLS} | set(ext.bells)
     battles = {key.split(":")[2] for rows in (data.LOCATIONS, ext.locations) for key, _, _, _ in rows if key.startswith("battle:")}
     applied = {e for rows in (data.CARDS, ext.cards) for _, _, info in rows for e in info.get("applies", [])}
@@ -27,13 +31,18 @@ def _check_references(ext: extensions.Extension) -> None:
     applied |= {e for leader in leaders for e in leader.get("applies", [])}
     traits = {t for rows in (data.CARDS, ext.cards) for _, _, info in rows for t in info.get("traits", [])}
     traits |= {t for leader in leaders for t in leader.get("traits", [])}
+    deck_cards = {c for source in (data.START_DECKS, ext.start_decks) for deck in source.values() for c in deck}
+
+    def starts_with(card: str, what: str) -> None:
+        if card not in deck_cards and card not in groups:
+            raise ExtensionError(f"{what}: no tribe starts with {card!r}")
 
     def group_or_cards(value, what: str) -> int:
         """Checks a group name or card list; returns how many members it has."""
         if isinstance(value, str):
             if value not in groups:
                 raise ExtensionError(f"{what} names an unknown group {value!r}")
-            return len(set(GROUPS.get(value, [])) | set(ext.groups.get(value, [])))
+            return len(set(BASE_GROUPS.get(value, [])) | set(ext.groups.get(value, [])))
         unknown = [c for c in value if c not in cards and not c.startswith("tribe:")]
         if unknown:
             raise ExtensionError(f"{what} names unknown cards {', '.join(unknown)}")
@@ -64,13 +73,17 @@ def _check_references(ext: extensions.Extension) -> None:
             raise ExtensionError(f"{what}: nothing has the trait {rule[1]!r}")
         elif form == "applies" and rule[1] not in applied:
             raise ExtensionError(f"{what}: nothing applies {rule[1]!r} (effects are the game's names, e.g. Weakness for Bom)")
+        elif form == "starts_with":
+            starts_with(rule[1], what)
+        elif form == "clan_kit" and rule[1].get("starts_with"):
+            starts_with(rule[1]["starts_with"], what)
         elif form == "battle" and rule[1] not in battles:
             raise ExtensionError(f"{what} names an unknown battle {rule[1]!r}")
         elif form in ("any_card", "two_of"):
             if isinstance(rule[1], str):
                 if rule[1] not in groups:
                     raise ExtensionError(f"{what} names an unknown group {rule[1]!r}")
-                size = len(set(GROUPS.get(rule[1], [])) | set(ext.groups.get(rule[1], [])))
+                size = len(set(BASE_GROUPS.get(rule[1], [])) | set(ext.groups.get(rule[1], [])))
             else:
                 unknown = [c for c in rule[1] if c not in cards]
                 if unknown:
@@ -91,7 +104,7 @@ def _merge() -> tuple[list, list, list]:
         try:
             _check_references(ext)
             for group in ext.groups:
-                if group not in GROUPS and group in new_groups:
+                if group not in BASE_GROUPS and group in new_groups:
                     raise ExtensionError(f"group {group!r} is already {new_groups[group]}'s")
         except ExtensionError as e:
             extensions.FAILED[mod] = f"{ext.path}: {e}"
@@ -99,8 +112,9 @@ def _merge() -> tuple[list, list, list]:
             logging.error(f"Wildfrost: extension {mod} left out: {e}")
             continue
         for group, names in ext.groups.items():
-            if group not in GROUPS:
+            if group not in BASE_GROUPS:
                 new_groups[group] = mod
+            if group not in GROUPS:
                 GROUPS[group] = []
             GROUPS[group].extend(n for n in names if n not in GROUPS[group])
         locations += ext.locations
@@ -127,3 +141,7 @@ SHARES = {tribe: info["shares"] for tribe, info in TRIBES.items() if "shares" in
 LEADERS = {clan: list(rows) for clan, rows in data.LEADERS.items()}
 for _ext in extensions.LOADED.values():
     LEADERS.update(_ext.leaders)
+# Each tribe's starting deck: ours and the loaded extensions' tribes' (["starts_with", card]).
+START_DECKS = {clan: list(cards) for clan, cards in data.START_DECKS.items()}
+for _ext in extensions.LOADED.values():
+    START_DECKS.update(_ext.start_decks)

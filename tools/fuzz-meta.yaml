@@ -1,0 +1,7 @@
+# Fuzzer meta file (Archipelago-fuzzer -m, or the index tester's "Fuzz meta (YAML)" field).
+# Tribes: Modded Only always fails with an OptionError when no mod has an extension file, and the
+# fuzzer has none, so a third of its runs were ignored. Keep the other two values, half each.
+Wildfrost:
+  tribes:
+    all: 1
+    vanilla_only: 1

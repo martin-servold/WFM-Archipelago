@@ -35,7 +35,9 @@ The run that completes the last clan finishes the seed.
   Goats (Shademancers)". The battles you meet change from run to run, so finding them all takes several runs.
 - **Bosses:** defeating each area's possible bosses. Each boss gives two checks ("... #2"). With **New Challenges** off,
   so does every challenge that unlocks a charm in the base game (Sunbringer, beating the True Final Boss, among them; a
-  Final Boss goal seed leaves it out, with the True Final Boss battles).
+  Final Boss goal seed leaves it out, with the True Final Boss battles). A seed with far more checks than items (mods
+  with tribes of their own) drops all the bosses' "#2" checks, and then the charm challenges', as long as at least 15%
+  of its checks still hold Bling, boons or traps.
 - **Challenges:** completing any of the game's challenges. Gnomebringer only ever holds filler (it's too much luck),
   and so does Sunbringer when your goal is a single True Final Boss win. They are all active from the start rather than unlocking in
   a chain.
@@ -93,8 +95,8 @@ Tea), the Punchfist Charm, or Bom Barrel with the Cake or Frenzy Charm. Equip 10
 with Force Storm Bells Up To on, four at 22).
 
 You start with one tribe, chosen by the **Starting Tribe** option (random by default); the other two are items, and
-each tribe's battles and wins need its tribe. Some battles also only appear once you have the Shademancers or
-Clunkmasters tribe. With a True Final Boss goal, beating
+each tribe's battles and wins need its tribe. Every battle can come up in any run, including the ones the base game
+only shows once the Shademancers or Clunkmasters are unlocked. With a True Final Boss goal, beating
 the True Final Boss with each tribe is a check too.
 
 Daily Voyages are switched off while you play an Archipelago slot, since their deck of the day isn't the multiworld's.

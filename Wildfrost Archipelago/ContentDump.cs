@@ -140,6 +140,8 @@ namespace WildfrostArchipelago
                         lines.Add($"    pool {pool.name} type={pool.type} general={pool.isGeneralPool} copies={pool.copies} ({pool.list?.Count ?? 0}): " +
                                   string.Join(", ", (pool.list ?? new List<DataFile>()).Select(SurveyLog.Name)));
                     }
+                    // The starting deck, for ["starts_with", card] (tools/gen_data.py; the user's call, 2026-11-24).
+                    lines.Add("    start deck: " + string.Join(", ", ExtensionMaker.StartDeck(c)));
                 }
             });
 
@@ -218,7 +220,7 @@ namespace WildfrostArchipelago
             });
 
             // Each clan's leaders, and every card's and charm's effects (PLAN.md §10, the user's call 2026-11-15):
-            // tools/make_extension.py groups a mod's cards by what they apply, leaders included, so "apply X"
+            // tools/gen_data.py lists what the base game's cards apply, leaders included, so "apply X"
             // challenges know which cards and clans can do it. "-> Y" is what an "apply" effect applies.
             Section("Clan leaders", () =>
             {

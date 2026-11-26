@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Deadpan.Enums.Engine.Components.Modding;
@@ -65,26 +66,31 @@ namespace WildfrostArchipelago
             if (lockedPets.Count > 0)
                 findings.Add($"Pets this seed doesn't know, which stay locked: {string.Join(", ", lockedPets)}");
 
+            // Game methods we and another mod both patch, one line each: "(other mod) Type.Method" (the user's
+            // layout, 2026-11-24).
+            var shared = new List<string>();
             string ours = ArchipelagoMod.Instance?.HarmonyId;
             if (ours != null)
-            {
-                var shared = Harmony.GetAllPatchedMethods()
+                shared = Harmony.GetAllPatchedMethods()
                     .Select(m => new { Method = m, Owners = Harmony.GetPatchInfo(m)?.Owners ?? new List<string>().AsReadOnly() })
                     .Where(p => p.Owners.Contains(ours) && p.Owners.Any(o => o != ours))
-                    .Select(p => $"{p.Method.DeclaringType?.Name}.{p.Method.Name} (also {string.Join(", ", p.Owners.Where(o => o != ours))})")
+                    .Select(p => $"({string.Join(", ", p.Owners.Where(o => o != ours).Distinct())}) {p.Method.DeclaringType?.Name}.{p.Method.Name}")
+                    .OrderBy(line => line, StringComparer.Ordinal)
                     .ToList();
-                if (shared.Count > 0)
-                    findings.Add($"Game methods another mod patches too (may conflict): {string.Join("; ", shared)}");
-            }
 
             string modLine = others.Count == 0 ? "No other mods loaded" : "Other mods loaded: " + string.Join(", ", others);
-            string result = modLine + "\n" + string.Join("\n", missing) + "\n" + string.Join("\n", findings);
+            string result = modLine + "\n" + string.Join("\n", missing) + "\n" + string.Join("\n", findings) + "\n" + string.Join("\n", shared);
             if (result == lastResult) return;
             lastResult = result;
             if (others.Count == 0) client.LogDebug(modLine);
             else client.Log(modLine);
             foreach (string problem in missing) client.Log("Seed content missing: " + problem);
             foreach (string finding in findings) client.Log("Compatibility: " + finding);
+            if (shared.Count > 0)
+            {
+                client.Log("Potential conflicting game patches:");
+                foreach (string line in shared) client.Log("  " + line);
+            }
             if (missing.Count > 0)
                 ApUi.ShowToast("Mods", "This seed needs content the game doesn't have", "Details in the Archipelago log", ApUi.SentColor);
             else if (findings.Count > 0)
