@@ -17,6 +17,7 @@ PACK_KEYS = [key for key, _, _, info in ITEMS if info["kind"] == "Pack"]
 INFO_BY_KEY = {key: info for key, _, _, info in ITEMS}
 INFO_BY_NAME = {name: info for _, name, _, info in ITEMS}
 ITEM_KEY_BY_NAME = {name: key for key, name, _, _ in ITEMS}
+ITEM_NAME_BY_KEY = {key: name for key, name, _, _ in ITEMS}
 CARD_KIND_BY_KEY = {key: info["kind"] for key, _, info in CARDS}
 
 # Filler is Bling and the boons; trap_percentage of it is traps instead.
@@ -31,15 +32,6 @@ def filler_name(world: WildfrostWorld) -> str:
 
 
 STORM_BELL = "Progressive Storm Bell"
-# Pets are useful, except where logic counts one: Spike's Teeth for "Kill 10 enemies with Teeth",
-# Loki's Demonize for "Kill 3 Demonized enemies", and Sneezle's draw for "Hoarder". Every seed starts with a random pet (world.generate_early),
-# so "Best Friends" needs no rule for one.
-SPIKE_PET = "Spike Pet"
-LOKI_PET = "Loki Pet"
-SNEEZLE_PET = "Sneezle Pet"
-# Binku applies Ink: with New Challenges, it counts for "Apply 40 Ink" (the user's call, 2026-11-08).
-INK_PET = "Binku Pet"
-PROGRESSION_PETS = {SPIKE_PET, LOKI_PET, SNEEZLE_PET}
 # Steps of two storm points (decided by the user 2026-11-06): caps 2, 4, ... 20, then Overcrank (22).
 # Reverse runs the other way: Overcranked, 20, 18, ... 2, then no bells. The client lifts vanilla's
 # 10-point cap for these seeds; seeds from before (slot_data without storm_bell_levels) had 7 levels:
@@ -90,10 +82,39 @@ def storm_bells_in_pool(world: WildfrostWorld) -> int:
     return STORM_BELL_LEVELS
 
 
+def named_items(world: WildfrostWorld) -> set[str]:
+    """
+    Items a rule names by key (["has", ...], ["all", ...], ["any", ...]) in a challenge this slot can have: its
+    extensions' and, with New Challenges, ours. Pets and map events are only useful unless one is named, then
+    progression, so logic can count it (found in review, 2026-11-25: an extension's ["has", "pet:..."] could
+    never be reached). For the base game that's what the hand-kept list was: Spike (Teeth), Loki (Demonize),
+    Sneezle (Hoarder), and with New Challenges Binku (Ink) and the three map events. Worked out once, before
+    the checks exist (the starting pet is made in generate_early), so a check left out later still counts.
+    """
+    cached = getattr(world, "_named_items", None)
+    if cached is not None:
+        return cached
+    from .content import LOCATIONS  # noqa: PLC0415  (content imports this module)
+
+    def walk(rule, found):
+        if isinstance(rule, list) and rule:
+            if rule[0] == "has":
+                found.add(rule[1])
+            elif rule[0] in ("all", "any"):
+                found.update(rule[1])
+            elif rule[0] in ("and", "or"):
+                for child in rule[1]:
+                    walk(child, found)
+    keys: set[str] = set()
+    for key, _, _, info in LOCATIONS:
+        if key.startswith("challenge:") and world.uses(info) and (not info.get("ap") or world.options.new_challenges):
+            walk(info.get("rule"), keys)
+    world._named_items = {ITEM_NAME_BY_KEY[k] for k in keys if k in ITEM_NAME_BY_KEY}
+    return world._named_items
+
+
 def create_item(world: WildfrostWorld, name: str) -> WildfrostItem:
-    # New Challenges need Binku (Ink) and the three map events (their challenges) in logic.
-    progression = name in PROGRESSION_PETS or (
-        world.options.new_challenges and (name == INK_PET or KIND_BY_NAME[name] == "Event"))
+    progression = KIND_BY_NAME[name] in ("Pet", "Event") and name in named_items(world)
     classification = ItemClassification.progression if progression else CLASSIFICATION_BY_KIND[KIND_BY_NAME[name]]
     if name == STORM_BELL and bells_are_filler(world):
         classification = ItemClassification.filler

@@ -373,7 +373,10 @@ namespace WildfrostArchipelago
                 string desc = ch.Text.Replace("{0}", ch.Goal.ToString(CultureInfo.InvariantCulture));
                 locations.Add(new JObject { ["key"] = "challenge:" + ch.Name,
                                             ["name"] = "Challenge - " + (string.IsNullOrEmpty(ch.Title) ? desc : ch.Title),
-                                            ["text"] = desc, ["region"] = "Area 1", ["rule"] = JValue.CreateNull() });
+                                            ["text"] = desc, ["region"] = "Area 1", ["rule"] = JValue.CreateNull(),
+                                            // Filler only until its creator writes what it needs (the user's call,
+                                            // 2026-11-26): a plain export can't make a seed unwinnable.
+                                            ["excluded"] = true });
                 // Its spare "#2", only in a seed short of checks for its items (written as "spares").
                 locations.Add(new JObject { ["key"] = $"challenge:{ch.Name}#2" });
             }
@@ -396,13 +399,21 @@ namespace WildfrostArchipelago
             Removed("battles", baseBattleNames.Where(n => !gameBattles.Contains(n)));
             Removed("challenges", baseChallenges.Where(c => !gameChallenges.Contains(c) && c.StartsWith("Challenge ")));
             Removed("bells", baseBells.Where(n => !gameBells.Contains(n)));
-            // The apworld refuses a file that removes a boss (runs, wins and the goal are built on them): say so now.
-            var bosses = new HashSet<string>(baseBattleRows.Where(r => (bool)r["boss"] || (bool?)r["true_final"] == true)
-                                                           .Select(r => ((string)r["key"]).Split(':')[2]));
-            var refused = (removes["battles"] ?? new JArray()).Select(n => (string)n).Where(bosses.Contains).ToList();
-            if (refused.Count > 0)
-                notes.Add($"Archipelago won't load this file: it removes {string.Join(", ", refused)}, and bosses can't be " +
-                          "removed (runs, wins and the goal are built on them)");
+            // The apworld refuses a file that leaves a boss tier with no boss (the user's call, 2026-11-26: every run's
+            // map deals one from each; bosses may go if the tier keeps a base one or one of the mod's own): say so now.
+            var removedBattles = new HashSet<string>((removes["battles"] ?? new JArray()).Select(n => (string)n));
+            var ownBossTiers = new HashSet<int>(battles.Where(b => !baseBattleKeys.Contains((string)b["key"])
+                                                                   && Ours(((string)b["key"]).Split(':')[2])
+                                                                   && ((bool)b["boss"] || (bool?)b["true_final"] == true))
+                                                       .Select(b => (int)b["tier"]));
+            var emptyTiers = baseBattleRows.Where(r => (bool)r["boss"] || (bool?)r["true_final"] == true)
+                .GroupBy(r => (int)r["tier"])
+                .Where(g => g.All(r => removedBattles.Contains(((string)r["key"]).Split(':')[2])) && !ownBossTiers.Contains(g.Key))
+                .Select(g => $"map tier {g.Key} ({string.Join(", ", g.Select(r => ((string)r["key"]).Split(':')[2]).Distinct())})")
+                .ToList();
+            if (emptyTiers.Count > 0)
+                notes.Add($"Archipelago won't load this file: it removes every boss of {string.Join("; ", emptyTiers)}, and " +
+                          "every run's map needs one there. Keep one, or add a boss of your own in that tier");
             if (removes.Count > 0 && others.Count > 1)  // others has this mod, and others besides
                 notes.Add("other mods are loaded: 'removes' lists what any of them took out, not just this mod");
 
@@ -481,8 +492,12 @@ namespace WildfrostArchipelago
                         row["id"] = previous["id"];
                         // What the creator wrote by hand stays.
                         if (key.StartsWith("challenge:"))
+                        {
                             foreach (var field in HandFields)
                                 if (previous.ContainsKey(field)) row[field] = previous[field].DeepClone();
+                            // Only a challenge new to the file starts filler only; one already there keeps what it had.
+                            if (!previous.ContainsKey("excluded")) row.Remove("excluded");
+                        }
                         if ((string)row["kind"] == "Tribe") row["name"] = previous["name"];
                         // A battle's name is written only when the creator changed it (the user's call, 2026-11-25:
                         // the apworld makes it from the title and the tribe's name, so a renamed tribe renames its
@@ -609,6 +624,9 @@ namespace WildfrostArchipelago
             var unruled = locations.Where(l => ((string)l["key"]).StartsWith("challenge:") && !Second(l)
                                                && (l["rule"] == null || l["rule"].Type == JTokenType.Null))
                 .Select(l => (string)l["key"]).ToList();
+            var fillerOnly = locations.Where(l => ((string)l["key"]).StartsWith("challenge:") && !Second(l)
+                                                  && (bool?)l["excluded"] == true)
+                .Select(l => (string)l["key"]).ToList();
             summary = $"{cards.Count} cards, {items.Count} items ({items.Count(i => (string)i["kind"] == "Pack")} packs), " +
                       $"{locations.Count} locations, {bells.Count} storm bells" +
                       (removes.Count > 0 ? ", removes " + string.Join(", ", removes.Properties().Select(p => $"{((JArray)p.Value).Count} {p.Name}")) : "") +
@@ -620,8 +638,12 @@ namespace WildfrostArchipelago
                 // mod's content are better (the user, 2026-11-15).
                 notes.Add($"{items.Count} items but {checks} checks: consider adding challenges for this mod's content; " +
                           "until then seeds make room with spare '#2' checks and, past those, fuller packs");
-            if (unruled.Count > 0)
-                notes.Add("challenges with no rule yet (in logic from the start): " + string.Join(", ", unruled));
+            if (fillerOnly.Count > 0)
+                notes.Add("challenges that only hold filler until you write their rule and remove \"excluded\": " +
+                          string.Join(", ", fillerOnly));
+            var ruleless = unruled.Except(fillerOnly).ToList();
+            if (ruleless.Count > 0)
+                notes.Add("challenges with no rule (in logic from the start): " + string.Join(", ", ruleless));
             return Format(doc);
         }
 

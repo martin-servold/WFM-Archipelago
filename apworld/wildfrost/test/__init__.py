@@ -1,7 +1,7 @@
 from BaseClasses import LocationProgressType
 from test.bases import WorldTestBase
 
-from ..items import PROGRESSION_PETS
+from ..items import INFO_BY_NAME
 from ..world import WildfrostWorld
 
 
@@ -23,7 +23,7 @@ class WildfrostTestBase(WorldTestBase):
     def world_setup(self, *args, **kwargs) -> None:
         super().world_setup(*args, **kwargs)
         for item in self.multiworld.precollected_items.get(self.player, []):
-            if item.name in PROGRESSION_PETS:
+            if item.advancement and INFO_BY_NAME[item.name]["kind"] == "Pet":  # one a rule names (items.named_items)
                 self.multiworld.state.remove(item)
 
     def assert_filler_only(self, challenge: str, filler_only: bool) -> None:

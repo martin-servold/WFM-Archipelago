@@ -51,7 +51,10 @@ namespace WildfrostArchipelago
             if (unknownCards.Count > 0)
                 findings.Add($"{unknownCards.Count} cards in the reward pools aren't in this seed, so runs offer them from the start: {string.Join(", ", unknownCards)}");
 
-            var unknownTribes = tribes.Select(c => c.name).Where(n => !KnownTribes.Contains(n) && !ApMode.SeedTribeClasses.Contains(n)).Distinct().ToList();
+            // A tribe the seed's Tribes option left out is known, and locked (ApMode.TribeLocked), not unknown.
+            var unknownTribes = tribes.Select(c => c.name)
+                .Where(n => !KnownTribes.Contains(n) && !ApMode.SeedTribeClasses.Contains(n) && !ApMode.LeftOutTribes.Contains(n))
+                .Distinct().ToList();
             contentFound |= unknownTribes.Count > 0;
             if (unknownTribes.Count > 0)
                 findings.Add($"Tribes this seed doesn't know (playable, but their runs send no checks and don't count toward the goal): {string.Join(", ", unknownTribes)}");

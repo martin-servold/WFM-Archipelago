@@ -191,6 +191,7 @@ namespace WildfrostArchipelago
         private volatile int trueFinalPoints = 10;
         private volatile List<SeedExtension> seedExtensions = new List<SeedExtension>();
         private volatile List<SeedTribe> seedTribes;
+        private volatile List<string> leftOutTribes = new List<string>();
         private volatile bool newChallenges;
         private volatile int deathLinkDamagePercent = 100;
         private volatile bool snowdwellersIsItem;
@@ -397,6 +398,10 @@ namespace WildfrostArchipelago
         /// <summary>slot_data "tribes": the seed's tribes, the vanilla three and its extensions' (the user's calls,
         /// 2026-11-16); null in older seeds, which have the vanilla three.</summary>
         public List<SeedTribe> SeedTribes => seedTribes;
+
+        /// <summary>slot_data "left_out_tribes": tribes of the seed's mods that its Tribes option left out, which
+        /// stay locked (the user's call, 2026-11-25); empty in older seeds.</summary>
+        public List<string> LeftOutTribes => leftOutTribes;
 
         public class SeedTribe
         {
@@ -656,6 +661,9 @@ namespace WildfrostArchipelago
                     Mod = (string)e["mod"], Guid = (string)e["guid"], Version = (string)e["version"],
                 }).ToList()
                 : new List<SeedExtension>();
+            leftOutTribes = slotData.TryGetValue("left_out_tribes", out object leftOut) && leftOut is JArray leftOutArray
+                ? leftOutArray.Select(t => (string)t).Where(t => t != null).ToList()
+                : new List<string>();
             seedTribes = slotData.TryGetValue("tribes", out object tribeData) && tribeData is JArray tribeArray
                 ? tribeArray.OfType<JObject>().Select(t => new SeedTribe
                 {

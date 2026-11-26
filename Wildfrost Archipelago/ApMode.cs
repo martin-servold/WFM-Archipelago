@@ -124,6 +124,7 @@ namespace WildfrostArchipelago
                 : tribes.Where(t => t.Class != null).ToDictionary(t => t.Class, t => t.Name ?? t.Class);
             tribeShares = tribes == null ? new Dictionary<string, string>()
                 : tribes.Where(t => t.Class != null && t.Shares != null).ToDictionary(t => t.Class, t => t.Shares);
+            leftOutTribes = new HashSet<string>(client.LeftOutTribes ?? new List<string>());
             grantedUnlocks = null;
             if (Profile == null)
             {
@@ -510,6 +511,11 @@ namespace WildfrostArchipelago
         // each extension tribe shares.
         private static Dictionary<string, string> clanNames = new Dictionary<string, string>(VanillaClanNames);
         private static Dictionary<string, string> tribeShares = new Dictionary<string, string>();
+        // Tribes of the seed's mods that its Tribes option left out (slot_data "left_out_tribes"): always locked.
+        private static HashSet<string> leftOutTribes = new HashSet<string>();
+
+        /// <summary>Tribes of the seed's mods that its Tribes option left out: locked, not unknown.</summary>
+        public static IEnumerable<string> LeftOutTribes => leftOutTribes;
 
         /// <summary>Pack groups for the tracker: General, the vanilla clans the seed's tribes draw from (their own,
         /// or shared: a Modded Only seed has no vanilla tribe but still their packs; 2026-11-24), then the
@@ -599,8 +605,9 @@ namespace WildfrostArchipelago
         // An extension's tribe has no game unlock to reuse, so tribe select hides it (GetLockedClasses) until its
         // item arrives (the user's call, 2026-11-16).
         public static bool TribeLocked(string className) =>
-            (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic" || tribeShares.ContainsKey(className))
-            && !received.Contains("tribe:" + className);
+            leftOutTribes.Contains(className)
+            || (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic" || tribeShares.ContainsKey(className))
+               && !received.Contains("tribe:" + className);
 
         /// <summary>Null when the lock isn't one of the tribe locks (then vanilla decides).</summary>
         // Under AP no battle waits for a tribe (the user's call, 2026-11-25): every battle can come up in every

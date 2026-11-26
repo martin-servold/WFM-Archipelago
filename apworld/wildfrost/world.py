@@ -177,6 +177,12 @@ class WildfrostWorld(World):
         for mod in self.extensions:
             for kind, names in extensions.LOADED[mod].removes.items():
                 removed[kind] |= names
+        # Each file keeps a boss in every boss tier, but two mods together can still take a tier's last one.
+        own = set().union(*(extensions.own_boss_tiers(extensions.LOADED[mod]) for mod in self.extensions))
+        empty = extensions.empty_boss_tiers(removed["battles"], own)
+        if empty:
+            raise OptionError(f"Wildfrost: {self.player_name}'s mod content ({', '.join(sorted(self.extensions))}) together "
+                              f"removes every boss of {extensions.boss_tier_names(empty)}, which every run's map needs")
         return removed
 
     def uses(self, info: Mapping[str, Any]) -> bool:
@@ -290,6 +296,10 @@ class WildfrostWorld(World):
             "death_link_damage_percent": self.options.death_link_damage_percent.value,
             # The Tribes option (0 all, 1 vanilla only, 2 modded only); "tribes" below lists the slot's.
             "tribe_selection": self.options.tribes.value,
+            # Tribes of this slot's mods that the Tribes option left out: the client locks them (the user's call,
+            # 2026-11-25: Vanilla Only with a mod's content in the seed shouldn't offer the mod's tribes).
+            "left_out_tribes": sorted(tribe for tribe, info in content.TRIBES.items()
+                                      if self.uses(info) and tribe not in locations.BASE_CLANS and tribe not in self.tribes),
             "game_speed_up": bool(self.options.game_speed_up),
             "starting_pet": self.starting_pet,
             # Unlimited leader rerolls on the leader select screen (the client's LeaderReroll).

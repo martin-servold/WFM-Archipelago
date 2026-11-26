@@ -1,92 +1,164 @@
-# Adding your mod to Wildfrost Archipelago
+# Wildfrost mods in Archipelago
 
-This guide is for Wildfrost mod creators or enthusiasts who want a mod's content in
-[Archipelago](https://archipelago.gg) seeds. If you're an enthusiast, please check the links at the bottom
-([Extensions already built](#extensions-already-built)) for mod extensions already built and shared by the creators
-of those mods.
+Other Wildfrost mods' content can join [Archipelago](https://archipelago.gg) seeds through an **extension file**,
+`<Mod>.wildfrost.json`. It tells the Archipelago world what a mod adds. The other mod needs no changes (most of the time):
+the Archipelago mod writes the file in game, from what the mod has loaded.
 
-You don't change your mod's code. You ship one extra file, `<YourMod>.wildfrost.json` (an **extension file**), that
-tells the Archipelago world about your content. The Archipelago mod writes most of it for you, in game, from what your
-mod has loaded. You then fill in a few things by hand, like what your challenges need.
+This guide has two parts:
 
-With an extension file, players who pick your mod get:
+- **[Part 1: Using a mod's content](#part-1-using-a-mods-content)** is for players and enthusiasts: get an extension
+  file (or make one in a minute) and play with it.
+- **[Part 2: For mod authors](#part-2-for-mod-authors)** has the details: what to fill in by hand, the file format,
+  the rule language and how IDs work.
 
-| From your mod | In the seed |
+With an extension file, a seed that picks the mod gets:
+
+| From the mod | In the seed |
 |---|---|
-| Companions, items and charms in the reward pools | Items: your cards come in packs of about 3, and each charm is an item of its own |
+| Companions, items and charms in the reward pools | Items: its cards come in packs of about 3, and each charm is an item of its own |
 | Pets | Items, locked until found |
 | Tribes | Items. Each tribe gets a check for every battle and boss, and a win with it counts toward the goal |
-| Battles in the map's battle pools | Checks, one for each tribe a run can win them with |
-| Challenges (ChallengeData) | Checks |
-| Storm bells | Count toward the storm points a seed can reach; your challenges can require them |
-| Removed base-game content (cards, battles, challenges, bells) | Left out of the seed |
+| Battles in the map's battle pools | Checks, one for (each tribe * each battle) |
+| Challenges | Checks |
+| Storm bells | Count toward the storm points a seed can reach; its challenges can require them |
+| Removed vanilla content | Left out of the seed |
+
+# Part 1: Using a mod's content
+
+## Extensions already built
+
+Check here first. These are extension files shared by the creators of their mods. Some are built into
+`wildfrost.apworld`, so there's nothing to copy: just add the mod under **Mod Content** in your Archipelago YAML
+(options) file ([Load it](#load-it)).
+
+| Mod | Extension file | Built in |
+|---|---|---|
+| *None listed yet* | | |
 
 ## What you need
 
-- Wildfrost with the Archipelago mod and your mod
-- [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.7 or newer and `wildfrost.apworld`, to test
+- Wildfrost with the Archipelago mod and the mod you want
+- [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.7 or newer, with `wildfrost.apworld`
 
-## Step by step
+## Make the file
 
-### 1. Generate the file in game
+Skip this if the mod's file is in the list above, or its author ships one.
 
-1. Enable both the Archipelago mod and your mod (with any mods yours depends on), then **close the game and start it
-   again**. A mod enabled from the Mods screen in a running game doesn't always finish loading all its content (pets,
-   for example), and the file would then miss it.
-2. On the main menu, press **Enter** to open the Archipelago log's text line, and type:
+1. Enable the Archipelago mod and the mod you want (with any mods it depends on), then **close the game and start it
+   again**. A mod enabled from the Mods screen in a running game sometimes doesn't finish loading, so it's best to
+   have both loaded when the game starts.
+2. On the main menu, press **Enter** to open the Archipelago log's text line (top left overlay element), and type `/generate` on its own. It
+   lists the loaded mods with their GUIDs.
+3. Type `/generate <the mod's GUID>`, for example `/generate yourname.wildfrost.mymod`.
 
-   ```
-   /generate <your mod's GUID> <optional: version number>
-   ```
-
-   For example, `/generate yourname.wildfrost.mymod 1.0.0`. The version defaults to `1.0.0`. `/generate` on its own
-   lists the loaded mods' GUIDs.
-
-   The extension is named after your mod's title. Players type the name into their options yaml, and it prefixes your
-   item names, so you may want a shorter one: add `name=MyMod` (in "double quotes" if it has spaces: `"name=My Mod"`).
-   A rerun keeps the name the file already has.
-
-   Names can't contain special characters, since the name is also the file's name: only A-Z, a-z, 0-9, spaces, `_`,
-   `.` and `-`. Anything else is dropped from the default name ("VFX/SFX Tools" becomes "VFXSFX Tools"). If nothing is
-   left (a title in another script, for example), the last part of your GUID is used, and if that's empty too,
-   `/generate` asks you for a `name=`.
-
-   Your mod's IDs come from a hash of its GUID ([ID blocks](#id-blocks)), so there's nothing to claim or register
-   first.
-
-The file is written to the game's save folder (the folder with `Player.log` in it), in `Archipelago/Extensions/`:
+The log shows a summary and some notes. The file is written to the game's save folder (the folder with `Player.log`
+in it), in `Archipelago/Extensions/`:
 
 - Windows: `%USERPROFILE%\AppData\LocalLow\Deadpan Games\Wildfrost\Archipelago\Extensions`
 - Linux (Proton): `~/.local/share/Steam/steamapps/compatdata/1811990/pfx/drive_c/users/steamuser/AppData/LocalLow/Deadpan Games/Wildfrost/Archipelago/Extensions`
 
 That's neither Archipelago's own folder nor the Archipelago mod's folder (a Workshop update replaces the mod's folder,
-which would delete your file). Nothing reads the file there: copy it next to `wildfrost.apworld` to use it
-([step 3](#3-test-it)).
+which would delete the file). Nothing reads the file in this default export location: you'll have to copy it to
+Archipelago as described below.
 
-To write it somewhere else, add `folder=` with a full path, in "double quotes" if it has spaces:
-`"folder=C:\Users\me\Documents\My Mod"`. A rerun looks for your existing file in that same folder, so give the same
-`folder=` each time.
+A file made this way works as it is. If the mod defines challenges, they're checks that only hold filler (Bling,
+boons, traps) until the mod's author writes what each one needs ([Part 2](#2-fill-in-what-the-game-cant-know)), so
+they can't make a seed unwinnable.
 
-The log shows a summary and notes. Read the notes: they say what was skipped and what needs your attention.
+## Load it
+
+1. Copy the file into Archipelago's folder, next to `wildfrost.apworld`.
+2. Restart the Archipelago Launcher, and anything opened from it (Universal Tracker included). Archipelago reads these
+   files when it starts.
+3. In the Launcher's **Options Creator**, pick Wildfrost and add the mod's name under **Mod Content**, then
+   **Export Options** into Archipelago's `Players` folder. The name is the extension (JSON) file's prefix (without
+   `.wildfrost.json`). With a mod that adds tribes, the **Tribes** option can run only its tribes (Modded Only) or
+   only the vanilla ones (Vanilla Only).
+4. Make sure the mod is still enabled in the game, and play. You'll get a warning if it's disabled when you connect.
+
+Who needs the extension file in their Archipelago folder: the computer that generates the seed, and anyone tracking it
+with Universal Tracker (both should have the same file). If you're doing neither (you use the in-game tracker), you
+don't need to install it. Other players in a seed do not need the apworld or the extension file. 
+
+**Built-in files.** A file built into `wildfrost.apworld` needs no downloading or copying. A loose file of the same mod
+is used instead only when its version is higher, so a mod author can distribute a fixed file before the next apworld
+release.
+
+## ⚠️ Test your seed before a public multiworld
+
+**Before you bring modded content into a shared or public multiworld, test it yourself:** generate a seed locally
+with your YAML, host it, and connect to it from the game with the mods enabled. Check that it generates, that the
+game shows no warnings about missing content when you press Play, and play a little.
+
+Mod authors can push updates through the Steam Workshop at any time, and an update can change or remove content an
+existing seed depends on. If you know a mod has updated, test again. If a mod you're using pushes an update in the
+middle of an async, you may have to release yourself (`!release`) or have the host send the affected items.
+
+## If something's wrong
+
+- **Generating fails:** the error names the file and what's wrong with it (a missing file, a field it doesn't
+  understand, a mod picked under Mod Content whose file isn't installed).
+- **In game:** when you press Play, the Archipelago mod checks that the seed's mods are loaded and that everything the
+  seed names exists in the game. If something's missing, it shows a toast and lists the details in its log. A seed
+  whose only tribes come from a mod that's turned off says so at the town gate.
+- **Universal Tracker refuses the seed:** it needs the exact version of the file the seed was generated with. If a
+  different version is installed, the error names both versions.
+
+# Part 2: For mod authors
+
+New to Archipelago? Its [setup guide](https://archipelago.gg/tutorial/Archipelago/setup/en) covers installing it,
+making options files, generating and hosting.
+
+You're not required to change your mod's code (though adding challenges for your content makes for better seeds,
+see [Adding a challenge](#2-fill-in-what-the-game-cant-know)). You ship `<YourMod>.wildfrost.json`: `/generate`
+writes most of it, and you fill in a few things by hand, like what your challenges need.
+
+## 1. Generate the file
+
+Generate it as in [Make the file](#make-the-file), with these options:
+
+```
+/generate <your mod's GUID> [version] [name=...] [folder=...] [salt=N]
+```
+
+- **Version:** defaults to `1.0.0`. Raise it whenever you ship a changed file ([Updating your mod](#updating-your-mod)).
+- **`name=`:** the extension is named after your mod's title. Players type the name into their options, and it
+  prefixes your item names, so you may want a shorter one: `name=MyMod` (in "double quotes" if it has spaces:
+  `"name=My Mod"`). A rerun keeps the name the file already has.
+
+  Names can't contain special characters, since the name is also the file's name: only A-Z, a-z, 0-9, spaces, `_`,
+  `.` and `-`. Anything else is dropped from the default name ("VFX/SFX Tools" becomes "VFXSFX Tools"). If nothing is
+  left (a title in another language or character set, for example), the last part of your GUID is used, and if that's empty too,
+  `/generate` asks you for a `name=`.
+- **`folder=`:** writes the file somewhere else, with a full path, in "double quotes" if it has spaces:
+  `"folder=C:\Users\me\Documents\My Mod"`. A rerun looks for your existing file in that same folder, so give the same
+  `folder=` each time.
+- **`salt=`:** only for an ID clash ([ID blocks](#id-blocks)).
+
+Your mod's IDs come from a hash of its GUID ([ID blocks](#id-blocks)), so there's nothing to claim or register first.
+
+Read the notes in the in game overlay log: they say what was skipped and what needs your attention.
 
 Your content is told apart by its name: the modding API names everything after your mod's GUID
-(`<GUID>.<name>`), so other mods can stay enabled. The one exception is `removes` (base-game content your mod takes
+(`<GUID>.<name>`). The one exception is `removes` (base-game content your mod takes
 out), which can't be traced to a specific mod if multiple are enabled: generate with only your mod enabled if it removes
 anything, or check that list.
 
-### 2. Fill in what the game can't know
+## 2. Fill in what the game can't know
 
 Open the file and go through these.
 
-**Challenges.** Each challenge your mod adds starts with `"region": "Area 1"` and no `rule`, which means it's in logic
-from the very start. Give each one what it really needs (see [Rules](#rules)):
+**Challenges.** Each challenge your mod adds starts with `"region": "Area 1"`, no `rule` and `"excluded": true`: it's
+a check that only ever holds filler, so a plain export can't make a seed unwinnable. Give each one what it really
+needs (see [Rules](#rules)) and **remove `"excluded"`**, so it can hold real items:
 
 ```json
-{"key": "challenge:MyMod Kill Trolls", "name": "Challenge - Kill 5 Trolls", "id": 106003,
+{"key": "challenge:dev.wildfrost.MyMod.Trolls", "name": "Challenge - Kill 5 Trolls", "id": 106003,
  "text": "Kill 5 Trolls", "region": "Area 2", "rule": ["any_card", "trolls"]}
 ```
 
-Add `"excluded": true` to a challenge that's too luck-based to hold anything but filler.
+Keep `"excluded": true` on a challenge that's too luck-based to hold anything but filler. A challenge with no `rule`
+and no `"excluded"` is in logic from the very start. `/generate`'s notes list the challenges still filler only.
 
 **Adding a challenge.** A check needs a real challenge in your mod: a `ChallengeData`, made with the modding API's
 `ChallengeDataBuilder`. The game reports when it's completed, and that sends the check. Its listener decides what
@@ -98,14 +170,15 @@ counts:
 - **Custom:** your mod's own code decides (the base game's "win without charms" and "beat a boss without Snow" are
   this kind).
 
-Under Archipelago its `requires` chain is ignored and its in-game reward isn't given: the check is the reward.
+Under Archipelago, its `requires` list (the challenges that must be completed before it unlocks) is ignored, so every
+challenge is open from the start, and its in-game reward isn't given: the check is the reward.
 
-Then run `/generate` again. It finds the new challenge, adds its row with an ID, and keeps everything already in the
-file. Write its `rule` and `region` as above. Don't write challenge rows or IDs yourself: a row with no
+Then run `/generate` again. It finds the new challenge, adds its row with an ID (filler only, as above), and keeps
+everything already in the file. Write its `rule` and `region`, and remove its `"excluded"`. Don't write challenge rows or IDs yourself: a row with no
 `ChallengeData` behind it can never be completed, and IDs come only from `/generate` (see [ID blocks](#id-blocks)).
 
 **Tribe names.** A tribe is named from its ClassData ("TerrariaAliens" becomes "Terraria Aliens"). Rename it in its
-`ap_items.Tribe` row if you like. Its battle checks are named after it, so they follow the new name.
+`ap_items.Tribe` row if you like. Its battle checks and packs are named after it, so they follow the new name.
 
 **Themed packs (optional).** Packs are dealt at random each seed. To make one pack always hold the same cards, list them
 in it:
@@ -119,39 +192,38 @@ in it:
 [The base game's groups](#the-base-games-groups)). You can add cards to groups, or make groups of your own for your
 challenges' rules.
 
-### 3. Test it
+## 3. Test it
 
-1. Put your file in Archipelago's `custom_worlds` folder, next to `wildfrost.apworld`. (When Archipelago is installed
-   somewhere it can't write to, like a Linux package in `/opt`, its apworlds and these files go in the `worlds`
-   folder of its user folder instead, such as `~/.local/share/Archipelago/worlds`.) Archipelago reads these files
-   when it starts: after changing one, restart the Launcher and anything opened from it, Universal Tracker included.
-2. Make an options file with the Launcher's **Options Creator**: pick Wildfrost, add `MyMod` under **Mod Content**,
-   then **Export Options** into Archipelago's `Players` folder.
-3. Generate. If your file has a problem, the error names the field.
-4. Host the seed, connect from the game with your mod enabled, and play a little. The Archipelago mod checks your mod
-   is loaded and that everything the seed names exists in the game. If something's missing, it shows a toast and logs
-   the details.
+[Load it](#load-it) as a player would, generate a seed, then host it and connect from the game with your mod enabled.
+If your file has a problem, generating fails with an error that names the field. In game, the Archipelago mod checks
+your mod is loaded and that everything the seed names exists.
 
-### 4. Ship it
+## 4. Ship it
 
-Include the file with your mod (in its folder, or on its page) and tell players to:
+Include the file with your mod (in its folder, or on its page), and point players to
+[Part 1](#part-1-using-a-mods-content) for loading it.
 
-1. Copy `MyMod.wildfrost.json` into Archipelago's `custom_worlds` folder on the computer that generates.
-2. Add `MyMod` under **Mod Content** in their Wildfrost options (the Launcher's **Options Creator**).
-3. Enable your mod in the game.
-
-The file is needed on the computer that generates the seed, and by anyone tracking the seed with Universal Tracker,
-who needs the exact same file. Players who only play don't need it.
-
-#### Built into the apworld
+### Getting your file built in
 
 A file can also ship inside `wildfrost.apworld` itself (its `official` folder), so players get it with the apworld
-and don't copy anything. Ask the apworld's maintainer. A built-in file is updated with each apworld release.
+and don't need to download or copy anything besides the apworld. To get yours built in:
 
-Players can still override a built-in file: a loose `MyMod.wildfrost.json` in `custom_worlds` with the same GUID is
-used instead when its version is higher, so a fixed file can go out before the next apworld release. With the same
-or a lower version, the built-in one is used. Either way, the log says which file was left out. Versions compare
-number by number (`1.10.0` is newer than `1.9.0`).
+1. Finish the file: every challenge has its `rule` and `region` (or stays `"excluded"` on purpose), and the tribe and
+   pack names read well.
+2. Test it ([Test it](#3-test-it)): generate seeds with the Tribes option on All and on Modded Only if you add tribes,
+   and playtest some seeds.
+3. Open an issue on the [Wildfrost Archipelago GitHub](https://github.com/martin-servold/WFM-Archipelago/issues) with
+   your mod's name, its GUID, a link to it (the Workshop page), the extension file attached, and what you tested.
+
+Only a mod's own author can ask for its file to be built in: an enthusiast's file for someone else's mod needs that
+author's permission, given in the issue.
+
+The maintainer checks it loads and generates, then adds it to the next apworld release and to
+[Extensions already built](#extensions-already-built).
+
+To update a built-in file, open an issue the same way with the new file and a higher version. Until the next apworld
+release, ship the new file with your mod as well: a loose file with a higher version overrides the built-in one
+([Load it](#load-it)). Versions compare number by number (`1.10.0` is newer than `1.9.0`).
 
 ## Updating your mod
 
@@ -161,8 +233,8 @@ existing file in the Extensions folder (or the `folder=` you give) by its GUID a
 - Everything that already has an ID keeps it, and new content gets the next free ID in your mod's block. Never edit IDs by
   hand, and never reuse one: seeds already played depend on them.
 - What you wrote by hand stays: challenge rules, regions, names, `excluded` and `true_final`, tribe names, battle
-  names you changed, themed packs (their cards and names) and groups. A themed pack's cards don't count toward the plain packs, and a themed
-  pack with none of its cards left becomes a plain one again.
+  names you changed, themed packs (their cards and names) and groups. A themed pack's cards don't count toward the
+  plain packs, and a themed pack with none of its cards left becomes a plain one again.
 - Content your mod no longer has is listed in a note, and its IDs go into `retired` in the file, so they're never
   given to anything else. If that content comes back, it gets its old ID back.
 - Changing the name (`name=`) changes every pack's key and every item name, so the packs get new IDs and players need
@@ -200,7 +272,7 @@ ClassData name.
 
 ```json
 "cards": {
-  "companions": {"Basic": [{"key": "card:Troll", "name": "Troll", "applies": ["Shroom"], "traits": ["Smackback"]}]}
+  "companions": {"Basic": [{"key": "card:dev.wildfrost.MyMod.Troll", "name": "Troll", "applies": ["Shroom"], "traits": ["Smackback"]}]}
 }
 ```
 
@@ -212,11 +284,11 @@ and feed the `applies` and `trait` rules.
 - **Pack:** the key is `pack:<clan>:<Companion or Item>:<your extension's name>-<number>`, and a row needs only its
   `key` and `id`. The apworld reads the clan and kind from the key, and names the pack "MyMod Snowdweller Companion
   Pack 2" (a tribe's packs by the tribe's item name, so renaming the tribe renames them). A themed pack can have its
-  own `name`. A clan and kind's cards are dealt evenly across its packs, so the number of packs sets their size.
-  `/generate` makes one pack for every 3 cards. Each of your clan-and-kind groups needs at least one pack, and no more
-  packs than cards.
+  own `name`. Your cards of one clan and kind (your Snowdweller companions, say) are dealt evenly across the packs of
+  that same clan and kind, so the number of packs sets their size. `/generate` makes one pack for every 3 cards. Each
+  clan and kind you have cards of needs at least one pack, and no more packs than cards.
 - **Charm:** one item per charm. The key is `charm:<clan>:<the charm's CardUpgradeData name>`, and a row needs only its
-  `key` and `id`: it unlocks that charm card, and is named as the card.
+  `key` and `id`.
 - **Pet:** `pet:` plus the pet's internal name.
 - **Tribe:** `tribe:` plus the ClassData name, and `shares`: the vanilla clan (`Basic`, `Magic` or `Clunk`) whose
   pools your tribe also draws from. Logic counts that clan's packs for your tribe's runs.
@@ -229,23 +301,24 @@ and feed the `applies` and `trait` rules.
   - The area and run tribe come from the key.
   - A base-game battle's map tier, boss flag and title come from the base game's.
   - The name is built like the base game's, from the area, the title and the run tribe's item name:
-    `Area 1 Battle - The Snowbo Squad (Bogfolk)`. Renaming a tribe item renames all its battles.
+    `Area 1 Battle - The Snowbo Squad (Bogfolk)`. Renaming the tribe's item renames all its battles automatically.
 
   A battle of your own also needs its `tier` (the map tier it's in, 0-8) and a `title`. `boss` and `true_final` are
   false unless the row says otherwise. A `name` written on a row replaces the built one, and any other field you write
   replaces the worked-out value; `area` and `run_tribe` must match the key.
 
-  `true_final` marks a True Final Boss fight: a tribe's own row of the base game's (worked out), and any battle of
-  yours in the True Final Boss's map tier (`"tier": 8`), which must have it. A True Final Boss fight needs the storm
-  bells to reach it, and is only in seeds whose goal goes there. `/generate` sets it.
+  `true_final` marks a True Final Boss fight: a tribe's own row of the base game's true final boss, and any battle of
+  yours in the True Final Boss's map tier (`"tier": 8`). A True Final Boss fight needs the storm
+  bells to reach it, and is only in seeds whose goal goes past there. `/generate` sets it automatically based on the battle pool it's in.
 
-  There are no tribe locks: in the base game some battles only appear once a tribe is unlocked, but under Archipelago
-  every battle can come up in every run. Older files' `"tribe"` field is ignored.
+  There are no battle locks: in the base game some battles only appear once a tribe is unlocked, but under Archipelago
+  every battle can come up in every run.
 - **Challenges:** keys are `challenge:<ChallengeData name>`. The game reports a challenge done when its ChallengeData
   completes, so nothing else is needed in game.
-- **twins:** `{"<key>": id}`: "#2" checks for a tribe's bosses, like the base game's. They're in the seed unless it
+- **twins:** `{"<key>": id}`: A double ("My Challange #2") check for a tribe's bosses. They're in the seed unless it
   has far more checks than items (see [Good to know](#good-to-know)).
 - **spares:** `{"<key>": id}`: "#2" checks that only appear when a seed is short of checks for all its items.
+  `/generate` writes one for each of your challenges and battles; there's nothing to do.
 
 Only battles in the map's battle pools come up in a run. A battle your mod starts some other way never becomes a check.
 
@@ -256,10 +329,21 @@ Only battles in the map's battle pools come up in a run. A battle your mod start
             "challenges": ["Challenge Charm 23"], "bells": ["9.MoreEnemiesInBossBattles"]}
 ```
 
-Names are the game's. Challenges that become impossible drop out of the seed. The base tribes, the bosses and the
-Final Bosses can't be removed: a file that removes one won't load, and `/generate` warns you when it writes one. To
-change a boss fight, keep its BattleData and change what's in it. If the storm bells left can't reach the True Final Boss's 10 storm points, it appears
-at the most they reach.
+Names are the vanilla game's internal names. Challenges that become impossible drop out of the seed.
+
+Bosses can be removed, as long as every boss tier keeps a boss: every run's map deals one from each. The tiers are
+the Area 1 bosses (tier 2: `Split Boss`, `Frenzy Boss`), the Area 2 bosses (tier 5: `Toadstool Boss`,
+`Clunker Boss`), the Final Boss (tier 7: `Final Boss`) and the True Final Boss (tier 8: `Final Final Boss`). A tier
+keeps a boss if one of the base ones stays, or if your mod adds a boss of its own there. A file that empties a tier
+won't load, and `/generate` warns you when it writes one; a seed whose mods empty a tier together won't generate.
+
+To replace the True Final Boss, remove `Final Final Boss` and add your own fight in tier 8 (it gets `true_final`, see
+[Locations](#locations)). Archipelago counts a True Final Boss win the way the game records one, so your fight has to
+end the run as a True Final Boss win, as the base game's does.
+
+The base tribes can't be removed: `removes` has no entry for them. Players who want only your tribes use the Tribes
+option (Modded Only). If the storm bells left can't reach the True Final Boss's 10 storm points, it appears at the
+maximum the player can reach.
 
 ## Rules
 
@@ -285,6 +369,13 @@ may name the base game's cards, items and groups and your own, but not another e
 | `["all", [keys]]`, `["any", [keys], 2]` | All of the items, or that many of them |
 | `["and", [rules]]`, `["or", [rules]]` | All of the rules, or any one |
 
+An item named by `has`, `all` or `any` counts for logic even when it's normally only useful (a pet or a map event).
+A challenge whose rule needs an item the seed doesn't have (a tribe the player's Tribes option left out, for example)
+is left out of that seed.
+
+`kits`
+What logic assumes a run needs to get to a certain area/boss.
+
 `clan_kit` takes:
 
 - `clan`: the tribe (otherwise any tribe will do)
@@ -293,18 +384,22 @@ may name the base game's cards, items and groups and your own, but not another e
 - `charms`: that many charms
 - `cards`: that many companion and item packs together
 - `forced_extra`: one more pack when the player forces storm bells
-- `area_kit`: the region's kit (below), for that same clan
+- `area_kit`: also the challenge region's kit (see [Regions](#regions)), for that same clan. Areas 3 and 4 add their
+  kit to every challenge anyway, but for any tribe; use `area_kit` when the run must be the tribe this rule is about,
+  for example "win a run with Snowdwellers using only X". In Area 2 a challenge only gets a kit this way.
 
 ### Regions
 
-`region` says how far into a run the challenge can be done. It adds a kit of packs on top of the rule:
+`region` says how far into a run the challenge can be done. It adds a **kit**, the packs logic expects a run to need
+to get that far, on top of the rule. Packs count from what one tribe's runs can draw (General, the tribe's own and
+the clan it shares):
 
 | Region | Adds |
 |---|---|
 | `Area 1` | Nothing |
-| `Area 2` | Nothing, unless the rule uses `area_kit` |
-| `Area 3` | A won run: the Final Boss kit |
-| `Area 4` | The True Final Boss kit's packs |
+| `Area 2` | Nothing, unless the rule's `clan_kit` uses `area_kit`: then the Final Boss kit |
+| `Area 3` | The Final Boss kit (a run that can win): 1 companion pack, and 1 item pack or 6 charms |
+| `Area 4` | The True Final Boss kit: 2 companion packs, 2 item packs and 3 charms |
 
 Add `"true_final": true` to a challenge that *is* the True Final Boss fight ("beat the Heart of the Storm with X"). It
 then also needs the storm bells for it, and it's left out of seeds whose goal doesn't go there.
@@ -344,6 +439,16 @@ clan whose leaders do what the group stands for. Rules that don't need a group u
 `["trait", ...]` instead (Demonize and Haze, for example), which count your cards without any listing. "Summon" is a
 trait `/generate` writes for any card that summons an ally (not one that adds a card to your hand).
 
+## Known unsupported content
+
+- New map tiers or areas
+- Battles started outside the map's battle pools (from a mod's own events, for example)
+- New map events and node types (they aren't items, so they're never locked)
+- Cards handed out outside the tribes' reward pools (a mod's own events or shops)
+- Changes to vanilla cards (logic uses the base game's data)
+- Content created during a run rather than at load
+- Changes to Wildfrost's own unlock and progression systems
+
 ## Good to know
 
 - **More items than checks:** an extension that adds many items and few checks fills the seed with spare "#2" checks,
@@ -356,7 +461,9 @@ trait `/generate` writes for any card that summons an ally (not one that adds a 
   own packs. One mod's battles get no checks for another mod's tribes.
 - **Tribes option:** players can run only your tribes (Modded Only) or only the vanilla ones (Vanilla Only). Without
   a tribe, its battle checks go, and so do the packs and charms of any clan no remaining tribe draws from (a tribe
-  draws from General, its own pools and the clan it shares). Challenges that need what's gone are left out.
+  draws from General, its own pools and the clan it shares). Challenges that need what's gone are left out. In a
+  Vanilla Only seed your tribes stay locked in game, but your cards and charms that are added to the vanilla pools are
+  still available.
 - **Mods that aren't picked:** if a player has your mod enabled but their seed doesn't use your extension, your cards
   are offered from the start, your tribes send no checks, and the Archipelago mod warns about both.
 
@@ -369,8 +476,7 @@ Seeds already played depend on them.
 Each mod's IDs come from its own block of 2,000, so two mods' IDs never mix. The block comes from the mod's GUID: the
 first 4 bytes of its SHA-256 hash, and the IDs run from 100,000 + block × 2,000. The file doesn't list the block. The
 apworld works it out from the GUID and refuses any ID outside it, so no file can take another mod's IDs, and there's
-no registry to keep. `/generate`'s summary shows your range ("IDs 3810960040000-3810960041999"). Files written before
-2026-11-25 list it as `id_block`, which is still checked.
+no registry to keep. `/generate`'s summary shows your range ("IDs 3810960040000-3810960041999").
 
 Two GUIDs can hash to the same block, though rarely: about 1 in 400,000 with 100 mods. Archipelago then loads only one
 of the two files, with an error that names the clash. To fix it, one of the two mods moves to a new block with a salt:
@@ -381,12 +487,3 @@ of the two files, with an error that names the clash. To fix it, one of the two 
 
 The salt is `id_salt` in the file (0 when it's not there). Every ID in the file moves to the new
 block, so give it a new version: seeds made with the old file still need the old file.
-
-## Extensions already built
-
-Extension files shared by the creators of these mods. Some are built into `wildfrost.apworld`, so there's nothing to
-copy: just add the mod under **Mod Content**. For the others, copy the file into Archipelago's `custom_worlds` folder.
-
-| Mod | Extension file | Built in |
-|---|---|---|
-| *None listed yet* | | |

@@ -165,17 +165,21 @@ def dropped_seconds(world: WildfrostWorld) -> set[str]:
         return set()
     checks = [(key, info) for key, _, _, info in LOCATIONS if included(world, info, key)]
     seconds = [(key, info) for key, info in checks if key.endswith("#2") and not is_spare(world, info)]
-    groups = ([key for key, _ in seconds if key.startswith("battle:")],
-              [key for key, info in seconds if info.get("internal", "").startswith("Challenge Charm ")])
+    groups = ([(key, info) for key, info in seconds if key.startswith("battle:")],
+              [(key, info) for key, info in seconds if info.get("internal", "").startswith("Challenge Charm ")])
     real = items.real_item_count(world)
     remaining = len(checks)
+    # Real items also need checks that aren't filler only, as spare_checks counts them (found in review, 2026-11-25:
+    # a mod with many filler-only challenges could pass the 15% test with too few checks for its items).
+    usable = sum(1 for _, info in checks if not filler_only(world, info))
     dropped: set[str] = set()
     for group in groups:
         left = remaining - len(group)
-        if not group or left - real < FILLER_FLOOR * left:
+        usable_left = usable - sum(1 for _, info in group if not filler_only(world, info))
+        if not group or left - real < FILLER_FLOOR * left or usable_left < real:
             break
-        dropped.update(group)
-        remaining = left
+        dropped.update(key for key, _ in group)
+        remaining, usable = left, usable_left
     return dropped
 
 

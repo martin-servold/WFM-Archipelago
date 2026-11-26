@@ -42,7 +42,9 @@ Copy-Item -Path (Join-Path $SolutionDir "licenses/*") -Destination $licensesDest
 $sourceDest = Join-Path $ModRoot "Source"
 # dist is left out because its .apworld is copied to the mod root below, and data because it holds
 # the game's content dump (not published; see .gitignore).
-$excludedDirectories = @("bin", "obj", ".vs", ".git", "dist", "data")
+# "Ionium Index": the community index's test reports, kept in git for sending to them, not shipped (the user's
+# call, 2026-11-25).
+$excludedDirectories = @("bin", "obj", ".vs", ".git", "dist", "data", "Ionium Index")
 # Development notes that aren't part of the source (the user's call, 2026-11-02).
 $excludedFiles = @("CLAUDE.md", "Steam Workshop Page.txt")
 if (Test-Path $sourceDest) {

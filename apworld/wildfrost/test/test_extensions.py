@@ -248,6 +248,18 @@ class TestExtensionFile(unittest.TestCase):
         names = [name for key, name, _, info in parsed(doc).items if info["kind"] == "Pack"]
         self.assertEqual(names[0], "TribeMod Marshfolk Companion Pack 1")
 
+    def test_true_final_only_on_the_true_final_boss(self) -> None:
+        """Review fix, 2026-11-25: a mod tribe's row of a base game battle may say true_final only for the True Final
+        Boss fight."""
+        doc = json.loads((HERE / "extensions" / "TribeMod.wildfrost.json").read_text())
+        row = next(r for r in doc["ap_locations"]["battles"] if r["key"] == "battle:0:Snowbos:TribeMod.Bogfolk")
+        row["true_final"] = True
+        self.assert_refused(doc, "true_final")
+        doc = json.loads((HERE / "extensions" / "TribeMod.wildfrost.json").read_text())
+        row = next(r for r in doc["ap_locations"]["battles"] if r["key"] == "battle:2:Final Final Boss:TribeMod.Bogfolk")
+        row["true_final"] = False
+        self.assert_refused(doc, "true_final")
+
     def test_old_tribe_lock_ignored(self) -> None:
         doc = sample()
         doc["ap_locations"]["battles"][0]["tribe"] = "Clunk"
@@ -303,9 +315,16 @@ class TestExtensionFile(unittest.TestCase):
         self.assert_refused({**sample(), "removes": {"cards": ["NotACard"]}}, "doesn't have: NotACard")
         self.assert_refused({**sample(), "removes": {"tribes": ["Basic"]}}, "removes takes")
 
-    def test_bosses_cant_be_removed(self) -> None:
-        self.assert_refused({**sample(), "removes": {"battles": ["Final Boss"]}}, "can't be removed")
-        self.assert_refused({**sample(), "removes": {"battles": ["Split Boss"]}}, "can't be removed")
+    def test_each_boss_tier_keeps_a_boss(self) -> None:
+        """The user's call, 2026-11-26: bosses may go as long as every boss tier keeps one, a base one or the mod's."""
+        self.assertEqual(parsed({**sample(), "removes": {"battles": ["Split Boss"]}}).removes["battles"], {"Split Boss"})
+        self.assert_refused({**sample(), "removes": {"battles": ["Split Boss", "Frenzy Boss"]}}, "every boss of map tier 2")
+        self.assert_refused({**sample(), "removes": {"battles": ["Final Boss"]}}, "every boss of map tier 7")
+        # TribeMod's own tier 8 fight, The Abyss, can stand in for the base game's True Final Boss.
+        tribe_mod = json.loads((HERE / "extensions" / "TribeMod.wildfrost.json").read_text())
+        self.assertEqual(parsed({**tribe_mod, "removes": {"battles": ["Final Final Boss"]}}).removes["battles"],
+                         {"Final Final Boss"})
+        self.assert_refused({**sample(), "removes": {"battles": ["Final Final Boss"]}}, "every boss of map tier 8")
 
     def test_cards_need_their_packs(self) -> None:
         doc = sample()
@@ -558,6 +577,62 @@ def run_with_extensions(files: dict[str, dict], code: str) -> dict:
 
 class TestFilesInOwnProcess(unittest.TestCase):
     """Cases that need their own set of installed files (review fixes, 2026-11-24)."""
+
+    def test_two_mods_cant_empty_a_boss_tier(self) -> None:
+        """Each file keeps a boss in every tier, but two together can't take a tier's last one (2026-11-26)."""
+        one = {**sample(), "removes": {"battles": ["Split Boss"]}}
+        other = json.loads((HERE / "extensions" / "RemoverMod.wildfrost.json").read_text())
+        other.setdefault("removes", {}).setdefault("battles", []).append("Frenzy Boss")
+        got = run_with_extensions(
+            {"SampleMod.wildfrost.json": one, "RemoverMod.wildfrost.json": other},
+            "from Options import OptionError\n"
+            "from test.general import gen_steps, setup_multiworld\n"
+            "from worlds.wildfrost.world import WildfrostWorld\n"
+            "try:\n"
+            "    setup_multiworld(WildfrostWorld, gen_steps, seed=1, options={'mod_content': ['SampleMod', 'RemoverMod']})\n"
+            "    out = 'generated'\n"
+            "except OptionError as e:\n"
+            "    out = str(e)\n"
+            "print('RESULT ' + json.dumps(out))")
+        self.assertIn("removes every boss of map tier 2", got)
+
+    def test_rules_naming_items(self) -> None:
+        """Review fix, 2026-11-25: a rule naming a pet or a map event makes it progression, so the check can be reached;
+        one naming an item this slot's pool doesn't have (here a tribe Modded Only leaves out) drops its challenge."""
+        doc = sample()
+        rules = [["has", "pet:Wolfie", 1], ["has", "event:CampaignNodeCopyItem", 1], ["has", "tribe:Magic", 1],
+                 ["any", ["tribe:Magic", "pet:Wolfie"], 1]]
+        for challenge, rule in zip(doc["ap_locations"]["challenges"], rules):
+            challenge["rule"] = rule
+        names = [c["name"] for c in doc["ap_locations"]["challenges"]]
+        tribe_mod = json.loads((HERE / "extensions" / "TribeMod.wildfrost.json").read_text())
+        got = run_with_extensions(
+            {"SampleMod.wildfrost.json": doc, "TribeMod.wildfrost.json": tribe_mod},
+            "from BaseClasses import CollectionState\n"
+            "from Fill import distribute_items_restrictive\n"
+            "from test.general import gen_steps, setup_multiworld\n"
+            "from worlds.AutoWorld import call_all\n"
+            "from worlds.wildfrost.items import create_item\n"
+            "from worlds.wildfrost.world import WildfrostWorld\n"
+            "out = {}\n"
+            "for nc in (False, True):\n"
+            "    mw = setup_multiworld(WildfrostWorld, gen_steps, seed=4, options={'mod_content': ['SampleMod', 'TribeMod'],\n"
+            "        'tribes': 'modded_only', 'new_challenges': nc, 'goal': 'final_boss'})\n"
+            "    distribute_items_restrictive(mw); call_all(mw, 'post_fill')\n"
+            "    state = CollectionState(mw); state.sweep_for_advancements()\n"
+            "    w = mw.worlds[1]\n"
+            "    out[str(nc)] = {'names': sorted(l.name for l in mw.get_locations(1)),\n"
+            "        'unreachable': [l.name for l in mw.get_locations(1) if not l.can_reach(state)],\n"
+            "        'progression': [n for n in ('Snoof Pet', 'Shade Sculptor') if create_item(w, n).advancement]}\n"
+            "print('RESULT ' + json.dumps(out))")
+        for nc, case in got.items():
+            with self.subTest(new_challenges=nc):
+                self.assertEqual(case["unreachable"], [])
+                self.assertEqual(case["progression"], ["Snoof Pet", "Shade Sculptor"])
+                self.assertIn(names[0], case["names"])
+                self.assertIn(names[1], case["names"])
+                self.assertNotIn(names[2], case["names"])  # needs the Shademancers, which Modded Only leaves out
+                self.assertIn(names[3], case["names"])  # the pet alternative is still there
 
     def test_malformed_files_fail_alone(self) -> None:
         """A file of the wrong shape is left out with an error; the apworld still imports."""

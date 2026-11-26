@@ -103,8 +103,9 @@ name under **Mod Content** in the Options Creator, and enable the mod in the gam
 the apworld, so they need no copying; a loose file with a higher version replaces the built-in one. Archipelago reads
 these files when it starts, so after adding or changing one, restart the Launcher and anything opened from it
 (Universal Tracker included); reconnecting isn't enough. With a mod that
-adds tribes, the **Tribes** option can run its tribes alone (Modded Only) or leave them out (Vanilla Only). Mod creators: see
-[EXTENSIONS.md](EXTENSIONS.md) for making one.
+adds tribes, the **Tribes** option can run its tribes alone (Modded Only) or leave them out (Vanilla Only).
+[EXTENSIONS.md](EXTENSIONS.md) lists the extension files already built and shows how to make one in game (Part 1), and
+has the details for mod authors (Part 2).
 
 ## Building from source
 

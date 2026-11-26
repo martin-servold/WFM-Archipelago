@@ -9,7 +9,7 @@ from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
 from .content import CARDS, ITEMS, LEADERS, LOCATIONS, SHARES, START_DECKS
 from .data import LOGIC
 from .groups import GROUPS
-from .items import INK_PET, LOKI_PET, SNEEZLE_PET, SPIKE_PET, STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS, drawn_clans
+from .items import STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS, drawn_clans, in_seed
 from .locations import BASE_CLANS, CLANS, VICTORY_ITEM, included, victory_location
 
 if TYPE_CHECKING:
@@ -324,6 +324,13 @@ class CardRules:
     "any of" helpers drop such alternatives (either), raising only when none is left.
     """
 
+    def seed_item(self, key: str) -> str:
+        """An item a rule names, by name; Impossible when this slot's pool doesn't have it."""
+        name = ITEM_NAME_BY_KEY[key]
+        if not in_seed(self.world, name):
+            raise Impossible(name)
+        return name
+
     def __init__(self, world: WildfrostWorld):
         pack_names = {key: name for key, name, _, _ in ITEMS}
         self.world = world
@@ -440,12 +447,18 @@ class CardRules:
             return self.either(*self.battle_alternatives(rule[1]))
         if form == "and":
             return both(*(self.extension_rule(child, region) for child in rule[1]))
+        # An item this slot's pool doesn't have (a tribe the Tribes option left out, a removed charm, an empty pack,
+        # an unpicked extension's) makes the rule impossible, so its challenge leaves the seed (found in review,
+        # 2026-11-25: it stayed in, unreachable). "any" keeps the ones the pool has.
         if form == "has":
-            return Has(ITEM_NAME_BY_KEY[rule[1]], rule[2])
+            return Has(self.seed_item(rule[1]), rule[2])
         if form == "all":
-            return HasAll(*(ITEM_NAME_BY_KEY[k] for k in rule[1]))
+            return HasAll(*(self.seed_item(k) for k in rule[1]))
         if form == "any":
-            return HasFromList(*(ITEM_NAME_BY_KEY[k] for k in rule[1]), count=rule[2])
+            names = [ITEM_NAME_BY_KEY[k] for k in rule[1] if in_seed(self.world, ITEM_NAME_BY_KEY[k])]
+            if len(names) < rule[2]:
+                raise Impossible(f"fewer than {rule[2]} of {', '.join(rule[1])}")
+            return HasFromList(*names, count=rule[2])
         if form == "packs":
             clan, kind, count = rule[1:]
             pool = clan_packs(clan, "Companion") + clan_packs(clan, "Item") if kind == "" else clan_packs(clan, kind)
@@ -536,7 +549,10 @@ def impossible_challenges(world: WildfrostWorld) -> set[str]:
     the tribes the Tribes option left out, found before the locations are made so they're left out
     (locations.included) and the pool fits.
     """
-    if not any(getattr(world, "removed", {}).values()) and not getattr(world, "tribes_limited", False):
+    # Vanilla seeds can do all of ours; a slot with extensions can name what isn't in its pool (found in review,
+    # 2026-11-25: this ran only with removals or a narrowed Tribes option).
+    if not any(getattr(world, "removed", {}).values()) and not getattr(world, "tribes_limited", False) \
+            and not getattr(world, "extensions", None):
         return set()
     cards = CardRules(world)
     impossible = set()

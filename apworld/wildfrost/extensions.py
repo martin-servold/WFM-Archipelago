@@ -170,10 +170,29 @@ BASE_NAMES = {
     "bells": {name for name, _, _ in data.BELLS},
 }
 # Bosses, the Final Boss and the True Final Boss: every run's path and the goal go through them.
-REFUSED_REMOVALS = {
-    "battles": {_battle_name(key) for key, _, _, info in data.LOCATIONS
-                if key.startswith("battle:") and (info["boss"] or info["true_final"])},
-}
+# The map's boss tiers (each area's bosses, the Final Boss, the True Final Boss) and the base game's bosses in each.
+# Every run's map deals a boss from each tier, so a tier must keep one: a mod may remove bosses as long as each tier
+# still has a base boss or one of its own (the user's call, 2026-11-26; before, no boss could be removed).
+BOSS_TIERS: dict[int, set[str]] = {}
+for _key, _, _, _info in data.LOCATIONS:
+    if _key.startswith("battle:") and not _key.endswith("#2") and (_info["boss"] or _info["true_final"]):
+        BOSS_TIERS.setdefault(_info["tier"], set()).add(_battle_name(_key))
+
+
+def own_boss_tiers(ext: "Extension") -> set[int]:
+    """The boss tiers an extension has battles of its own in."""
+    return {info["tier"] for key, _, _, info in ext.locations
+            if key.startswith("battle:") and not key.endswith("#2") and _battle_name(key) not in BASE_BATTLES
+            and (info["boss"] or info["true_final"])}
+
+
+def empty_boss_tiers(removed_battles: set[str], own_tiers: set[int]) -> list[int]:
+    """Boss tiers left with no boss: every base one removed and none of the mods' own there."""
+    return sorted(tier for tier, bosses in BOSS_TIERS.items() if bosses <= removed_battles and tier not in own_tiers)
+
+
+def boss_tier_names(tiers: list[int]) -> str:
+    return ", ".join(f"map tier {t} ({', '.join(sorted(BOSS_TIERS[t]))})" for t in tiers)
 
 
 # What a battle row may leave out (the user's call, 2026-11-25: short rows, renaming a tribe once renames its
@@ -501,9 +520,12 @@ def parse(path: str, raw: bytes) -> Extension:
             if own and tier == TRUE_FINAL_TIER and not true_final:
                 raise ExtensionError(f"{what}: a battle in tier {TRUE_FINAL_TIER} is a True Final Boss fight: "
                                      "\"true_final\": true")
-            if true_final and not (own and tier == TRUE_FINAL_TIER or not own and run_tribe in tribes):
+            # On a base game battle it's only the True Final Boss fight's own (found in review, 2026-11-25: any base
+            # battle row of a mod's tribe could say true_final).
+            if true_final and not (own and tier == TRUE_FINAL_TIER or not own and run_tribe in tribes and base["true_final"]) \
+                    or not own and not true_final and base["true_final"]:
                 raise ExtensionError(f"{what}.true_final: only a battle of its own in tier {TRUE_FINAL_TIER}, or a tribe's "
-                                     "own row of the base game's True Final Boss")
+                                     "own row of the base game's True Final Boss (which always has it)")
             if name is None:
                 if own and "title" not in loc:
                     raise ExtensionError(f"{what}: a battle of the mod's own needs a name or a title")
@@ -602,9 +624,11 @@ def parse(path: str, raw: bytes) -> Extension:
         unknown = [n for n in names if n not in BASE_NAMES[kind]]
         if unknown:
             raise ExtensionError(f"removes.{kind} names what the base game doesn't have: {', '.join(unknown)}")
-        refused = [n for n in names if n in REFUSED_REMOVALS.get(kind, ())]
-        if refused:
-            raise ExtensionError(f"removes.{kind}: {', '.join(refused)} can't be removed (runs, wins and the goal are built on them)")
+        if kind == "battles":
+            empty = empty_boss_tiers(set(names), own_boss_tiers(ext))
+            if empty:
+                raise ExtensionError(f"removes.battles takes every boss of {boss_tier_names(empty)}: every run's map needs "
+                                     "one there, so keep one or add a boss of your own in that tier")
         ext.removes[kind] = set(names)
 
     groups = _require(doc.get("groups", {}), dict, "groups")
