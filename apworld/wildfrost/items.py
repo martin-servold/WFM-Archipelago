@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Item, ItemClassification
 
-from .content import CARDS, ITEMS, SHARES
+from .content import BONUS, CARDS, DRAWS, ITEMS
 from .data import LOGIC
 
 if TYPE_CHECKING:
@@ -123,12 +123,15 @@ def create_item(world: WildfrostWorld, name: str) -> WildfrostItem:
 
 def drawn_clans(world: WildfrostWorld) -> set[str]:
     """
-    The reward pools this slot's tribes draw from: General, each tribe's own, and the vanilla clan an extension's
-    tribe shares. A clan none of them draws from (the Tribes option left its tribe out) has no packs or charms in
-    the seed (the user's call, 2026-11-24).
+    The reward pools this slot's tribes draw from (content.DRAWS): General, each tribe's own, and the clans an
+    extension's tribe shares, plus the clans of the cards its own pools reuse (content.BONUS, not counted in logic).
+    A clan none of them draws from (the Tribes option left its tribe out, or every tribe's pools leave out General)
+    has no packs or charms in the seed (the user's call, 2026-11-24).
     """
     tribes = getattr(world, "tribes", ())
-    return {"General", *tribes, *(SHARES[t] for t in tribes if t in SHARES)}
+    if not tribes:
+        return {"General"}
+    return {clan for tribe in tribes for clan in (*DRAWS.get(tribe, ("General", tribe)), *BONUS.get(tribe, ()))}
 
 
 def fill_packs(world: WildfrostWorld) -> dict[str, list[str]]:
@@ -182,7 +185,7 @@ PET_NAMES = [name for name, kind in KIND_BY_NAME.items() if kind == "Pet"]
 
 def pet_names(world: WildfrostWorld) -> list[str]:
     """The pets this slot can have: ours, and those of the extensions it uses (PLAN.md §10)."""
-    return [name for name in PET_NAMES if world.uses(INFO_BY_NAME[name])]
+    return [name for name in PET_NAMES if world.uses(INFO_BY_NAME[name]) and in_seed(world, name)]
 
 
 def in_seed(world: WildfrostWorld, name: str) -> bool:
@@ -199,6 +202,8 @@ def in_seed(world: WildfrostWorld, name: str) -> bool:
         return info["card"].removeprefix("card:") not in world.removed["charms"] and info["clan"] in drawn_clans(world)
     if info["kind"] == "Pack":
         return bool(world.pack_contents.get(ITEM_KEY_BY_NAME[name]))
+    if info["kind"] == "Pet":  # a pet an extension removes (Another Snowfall replaces the base game's)
+        return ITEM_KEY_BY_NAME[name].removeprefix("pet:") not in getattr(world, "removed", {}).get("pets", ())
     return True
 
 

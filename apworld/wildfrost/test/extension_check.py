@@ -74,6 +74,9 @@ out["remover"] = {
     "kept": sorted(n for n in ("Challenge - Minimalist", "Challenge - Apply 40 Ink") if n in names),
     "cards_dealt": sorted(c for c in ("card:Egg", "card:PinkberryJuice") if c in dealt),
     "squid_charm_in_pool": any(i.name == "Squid Charm" for i in remover.itempool),
+    # Its removed pet (DemonPet, the Loki Pet; 2026-11-27): not an item, not the starting pet, not in item_keys.
+    "loki": [any(i.name == "Loki Pet" for i in remover.itempool), remover.worlds[1].starting_pet == "Loki Pet",
+             "pet:DemonPet" in remover.worlds[1].fill_slot_data()["item_keys"].values()],
     "beatable": remover.can_beat_game(CollectionState(remover)),
     "pool_fits": len(remover.itempool) == len([loc for loc in remover.get_locations(1) if loc.address is not None]),
 }
@@ -248,5 +251,75 @@ try:
     out["rebuild_other"] = "no error"
 except OptionError as e:
     out["rebuild_other"] = str(e)
+
+# PoolMod's two tribes draw a shared "Enemy" pool and not General (the user's calls, 2026-11-27).
+pooled = generate({"mod_content": ["PoolMod"], "tribes": "modded_only", "starting_tribe": "any_tribe",
+                   "clans_required": 2})
+pworld = pooled.worlds[1]
+pslot = pworld.fill_slot_data()
+prules = read_location_rules(pslot["location_rules"])
+pool_items = [i.name for i in pooled.itempool] + [i.name for i in pooled.precollected_items[1]]
+out["pool"] = {
+    "tribes": pslot["tribes"],
+    "pool_clans": pslot["pool_clans"],
+    "enemy_packs": sorted(n for n in pool_items if n.startswith("PoolMod Enemy")),
+    "frost_pack": [n for n in pool_items if n.startswith("PoolMod Frost")],
+    "general_items": sorted(n for n in pool_items if n.startswith("General ") or n in ("Bling Charm", "Cake Charm")),
+    # Frost's pools reuse Snowdweller cards (bonus_clans): their packs are in the seed, not in Frost's logic.
+    "snowdweller_packs": sum(1 for n in pool_items if n.startswith("Snowdweller ")),
+    "clunk_packs": sum(1 for n in pool_items if n.startswith("Clunkmaster ")),
+    "boss_rule": json.dumps(prules.get("battle:1:Toadstool Boss:PoolMod.Frost")),
+    "frost_packs": sorted(starts_rules.clan_packs("PoolMod.Frost", "Companion") + starts_rules.clan_packs("PoolMod.Frost", "Item")
+                          + starts_rules.clan_packs("PoolMod.Frost", "Charm")),
+    "beatable": pooled.can_beat_game(CollectionState(pooled)),
+    "pool_fits": len(pooled.itempool) == len([loc for loc in pooled.get_locations(1) if loc.address is not None]),
+    "reuses": pslot["reuses"],
+}
+# Frost's pools reuse Peppering and Yuki (Snowdweller cards) and the Spice charm: a Snowdweller pack holding one
+# counts as that share of a pack, the charm whole (the user's calls, 2026-11-27).
+_packs = pworld.pack_contents
+for _kind, _card in (("Item", "card:Peppering"), ("Companion", "card:Yuki")):
+    _key = next(k for k, cards in _packs.items() if _card in cards)
+    _weights = starts_rules.drawn_weights(pworld, "PoolMod.Frost", _kind)
+    out["pool"][_kind] = {"weight": str(_weights.get(_key and starts_rules.ITEM_NAME_BY_KEY[_key])),
+                          "size": len(_packs[_key]),
+                          "enemy": sorted(str(w) for n, w in _weights.items() if n.startswith("PoolMod Enemy")),
+                          "other_snowdweller": sum(1 for n in _weights if n.startswith("Snowdweller")) - 1}
+out["pool"]["charms"] = sorted(starts_rules.drawn_weights(pworld, "PoolMod.Frost", "Charm"))
+out["pool"]["ember_charms"] = sorted(starts_rules.drawn_weights(pworld, "PoolMod.Ember", "Charm"))
+# Logic with the Enemy packs alone, then with the Snowdweller pack holding Peppering too.
+from worlds.wildfrost.rules import DrawnCount  # noqa: E402
+_rule = DrawnCount("PoolMod.Frost", "Item", 3).resolve(pworld)
+_state = CollectionState(pooled)
+for _name in ("PoolMod Enemy Item Pack 1", "PoolMod Enemy Item Pack 2"):
+    _state.collect(pworld.create_item(_name), True)
+out["pool"]["two_enemy_packs"] = _rule(_state)
+_pep = starts_rules.ITEM_NAME_BY_KEY[next(k for k, cards in _packs.items() if "card:Peppering" in cards)]
+_state.collect(pworld.create_item(_pep), True)
+out["pool"]["plus_pepper_pack"] = _rule(_state)
+
+# Modded Clans (the user's call, 2026-11-27): each mod keeps half or a quarter of its tribes, rounded up, at random.
+for _label in ("half", "quarter"):
+    _mw = generate({"mod_content": ["PoolMod", "TribeMod"], "modded_clans": _label, "clans_required": 30,
+                    "starting_tribe": "any_tribe"})
+    _w = _mw.worlds[1]
+    _slot = _w.fill_slot_data()
+    _rebuilt = setup_multiworld(WildfrostWorld, (), seed=99,
+                                options={**BASE, "mod_content": ["PoolMod", "TribeMod"]})
+    _rebuilt.re_gen_passthrough = {"Wildfrost": _slot}
+    for _step in ("generate_early", "create_regions", "create_items", "set_rules"):
+        call_all(_rebuilt, _step)
+    out["modded_clans_" + _label] = {
+        "tribes": [t["class"] for t in _slot["tribes"]],
+        "left_out": _slot["left_out_tribes"],
+        "clans_required": _w.options.clans_required.value,
+        "beatable": _mw.can_beat_game(CollectionState(_mw)),
+        "pool_fits": len(_mw.itempool) == len([loc for loc in _mw.get_locations(1) if loc.address is not None]),
+        "rebuild_same": {loc.name for loc in _rebuilt.get_locations(1)} == {loc.name for loc in _mw.get_locations(1)},
+    }
+# The pick is random per seed: across seeds, either PoolMod tribe can stay.
+out["modded_clans_picks"] = sorted({next(t for t in setup_multiworld(
+    WildfrostWorld, ("generate_early",), seed=s, options={**BASE, "mod_content": ["PoolMod"], "modded_clans": "half"}).worlds[1].tribes
+    if t.startswith("PoolMod.")) for s in range(12)})
 
 print("RESULT " + json.dumps(out))

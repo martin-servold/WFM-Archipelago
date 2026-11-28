@@ -32,7 +32,9 @@ The run that completes the last clan finishes the seed.
 ## What counts as a location check?
 
 - **Battles:** winning each distinct battle in each area with each tribe, for example "Area 2 Battle - The Demonhorn
-  Goats (Shademancers)". The battles you meet change from run to run, so finding them all takes several runs.
+  Goats (Shademancers)". The battles you meet change from run to run, so finding them all takes several runs. With 5
+  or more tribes (mods with tribes of their own), only the bosses count, as long as at least 15% of the checks still
+  hold Bling, boons or traps: so many battles made the storm bells hard to find.
 - **Bosses:** defeating each area's possible bosses. Each boss gives two checks ("... #2"). With **New Challenges** off,
   so does every challenge that unlocks a charm in the base game (Sunbringer, beating the True Final Boss, among them; a
   Final Boss goal seed leaves it out, with the True Final Boss battles). A seed with far more checks than items (mods

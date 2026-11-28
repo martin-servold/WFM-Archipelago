@@ -1,0 +1,362 @@
+{
+ "format": 1,
+ "mod": "PoolMod",
+ "guid": "test.wildfrost.poolmod",
+ "version": "1.0.0",
+ "clans": {
+  "test.wildfrost.poolmod.pool.Enemy": "Enemy"
+ },
+ "cards": {
+  "companions": {
+   "test.wildfrost.poolmod.pool.Enemy": [
+    {
+     "key": "card:PoolMod.Ally1",
+     "name": "Enemy Ally 1"
+    },
+    {
+     "key": "card:PoolMod.Ally2",
+     "name": "Enemy Ally 2"
+    },
+    {
+     "key": "card:PoolMod.Ally3",
+     "name": "Enemy Ally 3"
+    },
+    {
+     "key": "card:PoolMod.Ally4",
+     "name": "Enemy Ally 4"
+    },
+    {
+     "key": "card:PoolMod.Ally5",
+     "name": "Enemy Ally 5"
+    },
+    {
+     "key": "card:PoolMod.Ally6",
+     "name": "Enemy Ally 6"
+    }
+   ],
+   "PoolMod.Frost": [
+    {
+     "key": "card:PoolMod.FrostAlly",
+     "name": "Frost Ally"
+    }
+   ]
+  },
+  "items": {
+   "test.wildfrost.poolmod.pool.Enemy": [
+    {
+     "key": "card:PoolMod.Gear1",
+     "name": "Enemy Gear 1"
+    },
+    {
+     "key": "card:PoolMod.Gear2",
+     "name": "Enemy Gear 2"
+    },
+    {
+     "key": "card:PoolMod.Gear3",
+     "name": "Enemy Gear 3"
+    },
+    {
+     "key": "card:PoolMod.Gear4",
+     "name": "Enemy Gear 4"
+    },
+    {
+     "key": "card:PoolMod.Gear5",
+     "name": "Enemy Gear 5"
+    },
+    {
+     "key": "card:PoolMod.Gear6",
+     "name": "Enemy Gear 6"
+    }
+   ]
+  },
+  "charms": {
+   "test.wildfrost.poolmod.pool.Enemy": [
+    {
+     "key": "card:PoolMod.EnemyCharm",
+     "name": "Enemy Charm"
+    }
+   ]
+  }
+ },
+ "ap_items": {
+  "Tribe": [
+   {
+    "key": "tribe:PoolMod.Frost",
+    "name": "Frost",
+    "id": 4849428002000,
+    "shares": [
+     "test.wildfrost.poolmod.pool.Enemy"
+    ],
+    "general": false
+   },
+   {
+    "key": "tribe:PoolMod.Ember",
+    "name": "Ember",
+    "id": 4849428002001,
+    "shares": [
+     "test.wildfrost.poolmod.pool.Enemy"
+    ],
+    "general": false
+   }
+  ],
+  "Pack": [
+   {
+    "key": "pack:test.wildfrost.poolmod.pool.Enemy:Companion:PoolMod-1",
+    "id": 4849428002002
+   },
+   {
+    "key": "pack:test.wildfrost.poolmod.pool.Enemy:Companion:PoolMod-2",
+    "id": 4849428002003
+   },
+   {
+    "key": "pack:test.wildfrost.poolmod.pool.Enemy:Item:PoolMod-1",
+    "id": 4849428002004
+   },
+   {
+    "key": "pack:test.wildfrost.poolmod.pool.Enemy:Item:PoolMod-2",
+    "id": 4849428002005
+   },
+   {
+    "key": "pack:PoolMod.Frost:Companion:PoolMod-1",
+    "id": 4849428002006
+   }
+  ],
+  "Charm": [
+   {
+    "key": "charm:test.wildfrost.poolmod.pool.Enemy:PoolMod.EnemyCharm",
+    "id": 4849428002007
+   }
+  ]
+ },
+ "ap_locations": {
+  "battles": [
+   {
+    "key": "battle:0:Snowbos:PoolMod.Frost",
+    "id": 4849428002000
+   },
+   {
+    "key": "battle:0:Pengoons:PoolMod.Frost",
+    "id": 4849428002001
+   },
+   {
+    "key": "battle:0:BabyBerries:PoolMod.Frost",
+    "id": 4849428002002
+   },
+   {
+    "key": "battle:0:Bombers:PoolMod.Frost",
+    "id": 4849428002003
+   },
+   {
+    "key": "battle:0:Yeti:PoolMod.Frost",
+    "id": 4849428002004
+   },
+   {
+    "key": "battle:0:Shroomers:PoolMod.Frost",
+    "id": 4849428002005
+   },
+   {
+    "key": "battle:0:Berries:PoolMod.Frost",
+    "id": 4849428002006
+   },
+   {
+    "key": "battle:0:Frosters:PoolMod.Frost",
+    "id": 4849428002007
+   },
+   {
+    "key": "battle:0:Split Boss:PoolMod.Frost",
+    "id": 4849428002008
+   },
+   {
+    "key": "battle:0:Frenzy Boss:PoolMod.Frost",
+    "id": 4849428002010
+   },
+   {
+    "key": "battle:1:Spice Monkeys:PoolMod.Frost",
+    "id": 4849428002012
+   },
+   {
+    "key": "battle:1:Goats:PoolMod.Frost",
+    "id": 4849428002013
+   },
+   {
+    "key": "battle:1:Husks:PoolMod.Frost",
+    "id": 4849428002014
+   },
+   {
+    "key": "battle:1:Drek:PoolMod.Frost",
+    "id": 4849428002015
+   },
+   {
+    "key": "battle:1:Spikers:PoolMod.Frost",
+    "id": 4849428002016
+   },
+   {
+    "key": "battle:1:Inkers:PoolMod.Frost",
+    "id": 4849428002017
+   },
+   {
+    "key": "battle:1:Toadstool Boss:PoolMod.Frost",
+    "id": 4849428002018
+   },
+   {
+    "key": "battle:1:Clunker Boss:PoolMod.Frost",
+    "id": 4849428002020
+   },
+   {
+    "key": "battle:2:Blockers:PoolMod.Frost",
+    "id": 4849428002022
+   },
+   {
+    "key": "battle:2:Wildlings:PoolMod.Frost",
+    "id": 4849428002023
+   },
+   {
+    "key": "battle:2:Mimiks:PoolMod.Frost",
+    "id": 4849428002024
+   },
+   {
+    "key": "battle:2:Final Boss:PoolMod.Frost",
+    "id": 4849428002025
+   },
+   {
+    "key": "battle:2:Final Final Boss:PoolMod.Frost",
+    "id": 4849428002027
+   },
+   {
+    "key": "battle:0:Snowbos:PoolMod.Ember",
+    "id": 4849428002029
+   },
+   {
+    "key": "battle:0:Pengoons:PoolMod.Ember",
+    "id": 4849428002030
+   },
+   {
+    "key": "battle:0:BabyBerries:PoolMod.Ember",
+    "id": 4849428002031
+   },
+   {
+    "key": "battle:0:Bombers:PoolMod.Ember",
+    "id": 4849428002032
+   },
+   {
+    "key": "battle:0:Yeti:PoolMod.Ember",
+    "id": 4849428002033
+   },
+   {
+    "key": "battle:0:Shroomers:PoolMod.Ember",
+    "id": 4849428002034
+   },
+   {
+    "key": "battle:0:Berries:PoolMod.Ember",
+    "id": 4849428002035
+   },
+   {
+    "key": "battle:0:Frosters:PoolMod.Ember",
+    "id": 4849428002036
+   },
+   {
+    "key": "battle:0:Split Boss:PoolMod.Ember",
+    "id": 4849428002037
+   },
+   {
+    "key": "battle:0:Frenzy Boss:PoolMod.Ember",
+    "id": 4849428002039
+   },
+   {
+    "key": "battle:1:Spice Monkeys:PoolMod.Ember",
+    "id": 4849428002041
+   },
+   {
+    "key": "battle:1:Goats:PoolMod.Ember",
+    "id": 4849428002042
+   },
+   {
+    "key": "battle:1:Husks:PoolMod.Ember",
+    "id": 4849428002043
+   },
+   {
+    "key": "battle:1:Drek:PoolMod.Ember",
+    "id": 4849428002044
+   },
+   {
+    "key": "battle:1:Spikers:PoolMod.Ember",
+    "id": 4849428002045
+   },
+   {
+    "key": "battle:1:Inkers:PoolMod.Ember",
+    "id": 4849428002046
+   },
+   {
+    "key": "battle:1:Toadstool Boss:PoolMod.Ember",
+    "id": 4849428002047
+   },
+   {
+    "key": "battle:1:Clunker Boss:PoolMod.Ember",
+    "id": 4849428002049
+   },
+   {
+    "key": "battle:2:Blockers:PoolMod.Ember",
+    "id": 4849428002051
+   },
+   {
+    "key": "battle:2:Wildlings:PoolMod.Ember",
+    "id": 4849428002052
+   },
+   {
+    "key": "battle:2:Mimiks:PoolMod.Ember",
+    "id": 4849428002053
+   },
+   {
+    "key": "battle:2:Final Boss:PoolMod.Ember",
+    "id": 4849428002054
+   },
+   {
+    "key": "battle:2:Final Final Boss:PoolMod.Ember",
+    "id": 4849428002056
+   }
+  ],
+  "twins": {
+   "battle:0:Split Boss:PoolMod.Frost": 4849428002009,
+   "battle:0:Frenzy Boss:PoolMod.Frost": 4849428002011,
+   "battle:1:Toadstool Boss:PoolMod.Frost": 4849428002019,
+   "battle:1:Clunker Boss:PoolMod.Frost": 4849428002021,
+   "battle:2:Final Boss:PoolMod.Frost": 4849428002026,
+   "battle:2:Final Final Boss:PoolMod.Frost": 4849428002028,
+   "battle:0:Split Boss:PoolMod.Ember": 4849428002038,
+   "battle:0:Frenzy Boss:PoolMod.Ember": 4849428002040,
+   "battle:1:Toadstool Boss:PoolMod.Ember": 4849428002048,
+   "battle:1:Clunker Boss:PoolMod.Ember": 4849428002050,
+   "battle:2:Final Boss:PoolMod.Ember": 4849428002055,
+   "battle:2:Final Final Boss:PoolMod.Ember": 4849428002057
+  }
+ },
+ "leaders": {
+  "PoolMod.Frost": [
+   {
+    "key": "PoolMod.FrostKing"
+   }
+  ],
+  "PoolMod.Ember": [
+   {
+    "key": "PoolMod.EmberQueen"
+   }
+  ]
+ },
+ "start_decks": {
+  "PoolMod.Frost": [
+   "PoolMod.Ally1",
+   "PoolMod.Gear1"
+  ],
+  "PoolMod.Ember": [
+   "PoolMod.Ally2",
+   "PoolMod.Gear2"
+  ]
+ },
+ "reuses": {
+  "PoolMod.Frost": [
+   "Peppering",
+   "Yuki",
+   "CardUpgradeSpice"
+  ]
+ }
+}

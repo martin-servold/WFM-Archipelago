@@ -67,6 +67,9 @@ def included(world: WildfrostWorld, info: dict, key: str = "") -> bool:
     if key.startswith("battle:") and info["run_tribe"] in CLANS and info["run_tribe"] not in world.tribes:
         return False
     new_challenges = bool(world.options.new_challenges)
+    # A large tribe pool's regular battles (drop_regular_battles).
+    if getattr(world, "battles_dropped", False) and regular_battle(key, info):
+        return False
     # "#2" checks dropped from a seed with room to spare (dropped_seconds).
     if key in (getattr(world, "dropped_seconds", None) or ()):
         return False
@@ -100,14 +103,23 @@ def spare_checks(world: WildfrostWorld) -> set[str]:
     """
     Room for every item (PLAN.md §10): when a slot's mod extensions bring more items than it has checks,
     challenges get spare "#2" checks, picked at random, as many as needed, then regular battles do (the
-    user's calls, 2026-11-15).
-    If those run out, the extensions' packs get fuller (items.shrink_extension_packs), one pack fewer
-    at a time. Vanilla seeds always have room, so they get none.
+    user's calls, 2026-11-15). They also keep FILLER_FLOOR of the checks filler, as drop_regular_battles does
+    (the user's call, 2026-11-27: Another Snowfall's Vanilla Only seeds fit their items with 3% filler); the
+    floor is met as far as the spares go, and never shrinks packs.
+    If the spares run out before every item has a check, the extensions' packs get fuller
+    (items.shrink_extension_packs), one pack fewer at a time. Vanilla seeds always have room for their items;
+    with New Challenges off they sit just under the floor (158 checks, 135 items) and get one spare.
     """
     # Real items need checks that aren't filler only: those take the filler (Bling, boons, traps).
     world.spare_checks = set()
-    checks = sum(1 for key, _, _, info in LOCATIONS if included(world, info, key) and not filler_only(world, info))
-    need = items.real_item_count(world) - checks
+    checks = [info for key, _, _, info in LOCATIONS if included(world, info, key)]
+    left = len(checks)
+    usable = sum(1 for info in checks if not filler_only(world, info))
+    real = items.real_item_count(world)
+    room = real - usable  # the spares take items too
+    need = max(0, room)
+    while left + need - real < FILLER_FLOOR * (left + need):
+        need += 1
     if need <= 0:
         return set()
     world.spare_checks = {key for key, _, _, info in LOCATIONS if is_spare(world, info)}
@@ -116,15 +128,15 @@ def spare_checks(world: WildfrostWorld) -> set[str]:
     # The challenges' spares first, then the regular battles' (the user's call, 2026-11-15).
     chosen = set()
     for spares in ([k for k in candidates if k.startswith("challenge:")], [k for k in candidates if k.startswith("battle:")]):
-        picked = world.random.sample(spares, min(need, len(spares)))
+        picked = world.random.sample(spares, min(need - len(chosen), len(spares)))
         chosen.update(picked)
-        need -= len(picked)
-    while need > 0:
+    room -= len(chosen)
+    while room > 0:
         if not items.shrink_extension_packs(world):
             raise OptionError(f"Wildfrost: {world.player_name}'s mod content ({', '.join(sorted(world.extensions))}) "
-                              f"brings {need} more items than the seed has checks, even with every spare check and "
+                              f"brings {room} more items than the seed has checks, even with every spare check and "
                               "the mods' packs as full as they go")
-        need -= 1
+        room -= 1
     return chosen
 
 
@@ -183,7 +195,51 @@ def dropped_seconds(world: WildfrostWorld) -> set[str]:
     return dropped
 
 
+# From this many tribes in the slot, their regular battles go (drop_regular_battles).
+BATTLE_DROP_TRIBES = 5
+
+
+def regular_battle(key: str, info: dict) -> bool:
+    """A battle check that isn't a boss, the True Final Boss or a "#2"."""
+    return key.startswith("battle:") and not info.get("second") and not info.get("boss") and not info.get("true_final")
+
+
+def drop_regular_battles(world: WildfrostWorld) -> bool:
+    """
+    A slot with BATTLE_DROP_TRIBES or more tribes drops every tribe's regular battles, keeping the bosses (the
+    user's calls, 2026-11-27): each tribe brings a full set of battles but no bells, so a large pool (Companion
+    Start's six, or vanilla with a three-tribe mod) turned into a hunt for the bells among a hundred battles.
+    All or nothing, and only if FILLER_FLOOR of the checks stay filler, with the challenges' spare "#2" checks
+    (picked at random, as spare_checks does) added if that gets it there; otherwise every battle stays. This
+    comes before the room checks: spare_checks then has nothing to add, and dropped_seconds can still drop
+    the bosses' "#2"s if the floor allows.
+    """
+    world.battles_dropped = False
+    if len(world.tribes) < BATTLE_DROP_TRIBES:
+        return False
+    world.battles_dropped = True
+    world.spare_checks = {key for key, _, _, info in LOCATIONS if is_spare(world, info)}
+    spares = sorted(key for key, _, _, info in LOCATIONS if key.startswith("challenge:") and is_spare(world, info)
+                    and included(world, info, key) and not filler_only(world, info))
+    world.spare_checks = set()
+    checks = [info for key, _, _, info in LOCATIONS if included(world, info, key)]
+    real = items.real_item_count(world)
+    left = len(checks)
+    usable = sum(1 for info in checks if not filler_only(world, info))
+    need = max(0, real - usable)  # the spares take items too
+    while left + need - real < FILLER_FLOOR * (left + need):
+        need += 1
+    if need > len(spares):
+        world.battles_dropped = False
+        world.spare_checks = None  # spare_checks works them out for the full seed
+        return False
+    world.spare_checks = set(world.random.sample(spares, need))
+    return True
+
+
 def create_all_locations(world: WildfrostWorld) -> None:
+    if getattr(world, "battles_dropped", None) is None:
+        drop_regular_battles(world)
     if getattr(world, "spare_checks", None) is None:  # Universal Tracker's rebuild has them from slot_data
         world.spare_checks = spare_checks(world)
     if getattr(world, "dropped_seconds", None) is None:

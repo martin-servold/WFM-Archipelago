@@ -138,7 +138,8 @@ namespace WildfrostArchipelago
         }
 
         // Shroomers, Spikers, Bombers (Tribe 1) and Baby Berries, Inkers, Mimiks (Tribe 2) only
-        // appear once their tribe challenge is done. Under AP they're always there (ApMode.BattleLocked).
+        // appear once their tribe challenge is done. Under AP they're always there, or in seeds from
+        // before 0.5.0 once the tribe's item arrives (ApMode.BattleLocked).
         [HarmonyPatch(typeof(BattleLockData), nameof(BattleLockData.IsLocked))]
         private static class BattleLock
         {
@@ -1481,6 +1482,19 @@ namespace WildfrostArchipelago
         }
 
         // StartGame() and StartGame(string) both end in this overload; naming it is required (three share the name).
+        // The game's "defeat a boss without Snow" listener reads the status's data, the target's owner and card type,
+        // and the battle's enemy without checking any. A status with no data (Another Snowfall's Heartforge enemy
+        // spreading Spice, 2026-11-27) threw in the middle of a fight. Vanilla only listens while that challenge is
+        // unfinished; under AP every challenge listens from the start, so it's skipped when any of those is missing.
+        [HarmonyPatch(typeof(ChallengeListenerSystemDefeatBossWithoutSnow), "StatusApplied")]
+        private static class BossWithoutSnowNullGuard
+        {
+            private static bool Prefix(StatusEffectApply apply) =>
+                !ApMode.Active
+                || apply?.effectData != null && apply.target?.owner != null && apply.target.data?.cardType != null
+                   && References.Battle?.enemy != null;
+        }
+
         [HarmonyPatch(typeof(Menu), nameof(Menu.StartGame), typeof(GameMode))]
         private static class NoTribeAtGate
         {

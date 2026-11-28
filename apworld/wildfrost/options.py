@@ -196,9 +196,22 @@ class Tribes(Choice):
     default = 0
 
 
+class ModdedClans(Choice):
+    """
+    How many of each Mod Content mod's tribes the seed has, picked at random: All, Half or a Quarter (rounded up, so
+    each mod keeps at least one). For mods with many tribes. Vanilla Only leaves them all out anyway.
+    """
+
+    display_name = "Modded Clans"
+    option_all = 0
+    option_half = 1
+    option_quarter = 2
+    default = 0
+
+
 class ModContent(OptionSet):
     """
-    Content from other Wildfrost mods to include, by their extension's name (for example ["MyMod"]). Each needs
+    Content from other Wildfrost mods to include, by their extension's name (for example ["MyMod"]; any case). Each needs
     its mod's extension file (<Mod>.wildfrost.json) in your Archipelago folder, next to wildfrost.apworld, on the
     computer that generates, and the mod loaded in your game. Empty: the base game only.
     """
@@ -219,6 +232,7 @@ class WildfrostOptions(PerGameCommonOptions):
     new_challenges: NewChallenges
     mod_content: ModContent
     tribes: Tribes
+    modded_clans: ModdedClans
     game_speed_up: GameSpeedUp
     leader_reroll: LeaderReroll
     disable_possessed_final_boss: DisablePossessedFinalBoss

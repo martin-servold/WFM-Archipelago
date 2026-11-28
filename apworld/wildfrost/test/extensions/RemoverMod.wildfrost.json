@@ -21,6 +21,9 @@
     ],
     "bells": [
       "9.MoreEnemiesInBossBattles"
+    ],
+    "pets": [
+      "DemonPet"
     ]
   }
 }

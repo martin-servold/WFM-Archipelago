@@ -79,8 +79,12 @@ key, so they're never given to new content (seeds already played may hold them);
 its ID back. No live item or location may use a retired ID.
 
 Tribes (the user's calls, 2026-11-16): a "Tribe" item adds a playable tribe, by its ClassData name. Its
-runs draw from General, Snow, its "shares" clan (Basic, Magic or Clunk: the vanilla pools it also has) and
-its own cards, filed under its ClassData name like a clan's. It gets battle checks like a vanilla clan (the
+runs draw from General and Snow (unless "general": false: its pools leave them out), its "shares" clans (Basic,
+Magic or Clunk, the vanilla pools it also has, or the file's shared pool clans; one name or a list) and its own
+cards, filed under its ClassData name like a clan's. "clans" names the file's shared pool clans (the user's call,
+2026-11-27): a pool of the mod's own that several of its tribes draw (Another Snowfall's "Enemy" pools), its cards
+in its own packs, with the label they show. "reuses" lists, per clan of the file, the other clans' cards its own
+pools hold: logic counts a pack by the share of those a tribe can be offered (rules.DrawnCount). It gets battle checks like a vanilla clan (the
 file lists them, run_tribe its ClassData; /generate writes one per base battle, the bosses' "#2" as
 twins), and a Victory; a win with it counts toward Goal Clans Required. The client keeps it locked at tribe
 select until its item arrives. "leaders" lists its leaders' effects, for ["applies", ...], and "start_decks" the
@@ -148,7 +152,7 @@ RULE_FORMS = ("has", "all", "any", "packs", "and", "or", "card", "cards", "with"
               "battle", "applies", "trait", "clan_kit", "starts_with")
 CLAN_KIT_KEYS = {"clan": str, "companions": int, "items": int, "charms": int, "cards": int, "forced_extra": bool,
                  "area_kit": bool, "starts_with": str}
-REMOVE_KINDS = ("cards", "charms", "battles", "challenges", "bells")
+REMOVE_KINDS = ("cards", "charms", "battles", "challenges", "bells", "pets")
 CARD_SECTIONS = {"companions": "Companion", "items": "Item", "charms": "Charm"}
 
 
@@ -168,6 +172,8 @@ BASE_NAMES = {
     "challenges": {info["internal"] for key, _, _, info in data.LOCATIONS
                    if key.startswith("challenge:") and not info["internal"].startswith("ap:")},
     "bells": {name for name, _, _ in data.BELLS},
+    # Pets by their internal name (Another Snowfall replaces the base game's pets, 2026-11-27).
+    "pets": {key.removeprefix("pet:") for key, _, _, info in data.ITEMS if info["kind"] == "Pet"},
 }
 # Bosses, the Final Boss and the True Final Boss: every run's path and the goal go through them.
 # The map's boss tiers (each area's bosses, the Final Boss, the True Final Boss) and the base game's bosses in each.
@@ -232,7 +238,9 @@ class Extension:
     groups: dict = field(default_factory=dict)      # group name -> card names
     removes: dict = field(default_factory=dict)     # REMOVE_KINDS -> base game names taken out
     bells: dict = field(default_factory=dict)       # its own storm bells: game name -> storm points
-    tribes: dict = field(default_factory=dict)      # its tribes: ClassData name -> the vanilla clan it shares pools with
+    tribes: dict = field(default_factory=dict)      # its tribes: ClassData name -> the clans it shares pools with
+    clans: dict = field(default_factory=dict)       # its shared pool clans: clan name -> the label its packs show
+    reuses: dict = field(default_factory=dict)      # its clans -> keys of other clans' cards their pools also hold
     leaders: dict = field(default_factory=dict)     # its tribes' leaders, as data.LEADERS
     start_decks: dict = field(default_factory=dict)  # its tribes' starting decks, as data.START_DECKS
 
@@ -367,23 +375,53 @@ def parse(path: str, raw: bytes) -> Extension:
             raise ExtensionError(f"{what} {value} is outside block {ext.id_block} ({low}-{high - 1})")
         return value
 
+    # Its shared pool clans (the user's call, 2026-11-27): a pool of the mod's own that several of its tribes draw
+    # (Another Snowfall's "Enemy" pools) is a clan of its own, its cards in its own packs. Name -> pack label.
+    pool_clans: dict[str, str] = {}
+    for clan, label in _require(doc.get("clans", {}), dict, "clans").items():
+        if not clan or ":" in clan or clan in CLAN_NAMES:
+            raise ExtensionError(f"clans.{clan}: a shared pool clan's name has no ':' and isn't a vanilla clan")
+        pool_clans[clan] = _text(label, f"clans.{clan}")
+    ext.clans = pool_clans
+
     # Its tribes (the user's calls, 2026-11-16), read first: they're clans in the rest of the file.
     ap_items = _require(doc.get("ap_items", {}), dict, "ap_items")
-    tribes: dict[str, str] = {}  # ClassData name -> the vanilla clan whose pools it shares
+    tribes: dict[str, list[str]] = {}  # ClassData name -> the clans whose pools it shares
+    tribe_general: dict[str, bool] = {}  # ClassData name -> whether it draws General
     tribe_names = dict(BASE_TRIBE_NAMES)  # ClassData name -> its item's name, for battles' names
     for i, item in enumerate(_rows(ap_items.get("Tribe", []), "ap_items.Tribe")):
         what = f"ap_items.Tribe[{i}]"
         key = _text(item.get("key"), f"{what}.key")
         tribe = key.removeprefix("tribe:")
-        if not key.startswith("tribe:") or not tribe or ":" in tribe or tribe in CLAN_NAMES or tribe in tribes:
-            raise ExtensionError(f"{what}: a tribe's key is 'tribe:<ClassData>', one per tribe, not a vanilla clan")
-        shares = item.get("shares")
-        if shares not in CLAN_NAMES[1:]:
-            raise ExtensionError(f"{what}.shares should be Basic, Magic or Clunk (the vanilla clan whose pools it draws from)")
-        tribes[tribe] = shares
+        if not key.startswith("tribe:") or not tribe or ":" in tribe or tribe in CLAN_NAMES or tribe in tribes \
+                or tribe in pool_clans:
+            raise ExtensionError(f"{what}: a tribe's key is 'tribe:<ClassData>', one per tribe, not a vanilla clan "
+                                 "or a shared pool clan")
+        # The clans whose pools it also draws (a vanilla clan's, or the file's shared pool clans): one, a list or
+        # none (the user's call, 2026-11-27: a tribe needn't share a vanilla clan).
+        shares = item.get("shares", [])
+        shares = [shares] if isinstance(shares, str) else _require(shares, list, f"{what}.shares")
+        if any(c not in CLAN_NAMES[1:] and c not in pool_clans for c in shares) or len(set(shares)) != len(shares):
+            raise ExtensionError(f"{what}.shares names the clans whose pools it draws from: Basic, Magic, Clunk"
+                                 + (f" or this file's clans ({', '.join(pool_clans)})" if pool_clans else ""))
+        tribes[tribe] = list(shares)
+        # General's pools are in a tribe's reward pools like any other's, so a mod's tribe can leave them out.
+        tribe_general[tribe] = _require(item.get("general", True), bool, f"{what}.general")
         tribe_names[tribe] = _text(item.get("name"), f"{what}.name")
     ext.tribes = tribes
-    clans = (*CLAN_NAMES, *tribes)
+    unshared = [clan for clan in pool_clans if not any(clan in shares for shares in tribes.values())]
+    if unshared:
+        raise ExtensionError(f"clans: no tribe of this file shares {', '.join(unshared)}, so nothing could draw its cards")
+    clans = (*CLAN_NAMES, *tribes, *pool_clans)
+    # Cards of other clans that its tribes' and shared clans' own pools also hold (the user's calls, 2026-11-27:
+    # Another Snowfall's Enemy pools reuse base-game cards): a run of such a tribe can be offered them, so logic
+    # counts each pack by the share of its cards the tribe can draw (rules.DrawnCount), and each charm whole.
+    for clan, names in _require(doc.get("reuses", {}), dict, "reuses").items():
+        if clan not in tribes and clan not in pool_clans:
+            raise ExtensionError(f"reuses.{clan}: reuses lists cards for this file's tribes and shared pool clans")
+        if not all(isinstance(n, str) and n for n in _require(names, list, f"reuses.{clan}")):
+            raise ExtensionError(f"reuses.{clan} lists CardData (or charm) names")
+        ext.reuses[clan] = ["card:" + n for n in names]
     run_tribes = (*CLAN_NAMES[1:], *tribes)
 
     # Its reward cards by kind (the user's layout, 2026-11-15). Charms are cards too (data.CARDS has them):
@@ -431,7 +469,10 @@ def parse(path: str, raw: bytes) -> Extension:
             if kind not in ("Pet", "Tribe") and (clan not in clans or derived and clan != parts[1]):
                 raise ExtensionError(f"{what}.clan should be one of {', '.join(clans)}, and the one in its key")
             if kind == "Tribe":
-                info = {"kind": "Tribe", "shares": item["shares"]}
+                tribe = key.removeprefix("tribe:")
+                info = {"kind": "Tribe", "shares": tribes[tribe]}
+                if not tribe_general[tribe]:
+                    info["general"] = False
             elif kind == "Pet":
                 # A pet the mod adds: an item like ours, so the client keeps it locked until it arrives.
                 if not key.startswith("pet:"):
@@ -449,7 +490,7 @@ def parse(path: str, raw: bytes) -> Extension:
                     number = parts[3].rsplit("-", 1)[-1]
                     if not number.isdigit():
                         raise ExtensionError(f"{what}: a pack whose key doesn't end in -<number> needs a name")
-                    label = PACK_LABELS.get(clan) or tribe_names[clan]
+                    label = PACK_LABELS.get(clan) or tribe_names.get(clan) or pool_clans[clan]
                     shown = label if label.startswith(ext.mod) else f"{ext.mod} {label}"
                     name = f"{shown} {card_kind} Pack {int(number)}"
                 if "cards" in item:

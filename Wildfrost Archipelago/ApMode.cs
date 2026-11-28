@@ -122,9 +122,14 @@ namespace WildfrostArchipelago
             var tribes = client.SeedTribes;
             clanNames = tribes == null ? new Dictionary<string, string>(VanillaClanNames)
                 : tribes.Where(t => t.Class != null).ToDictionary(t => t.Class, t => t.Name ?? t.Class);
-            tribeShares = tribes == null ? new Dictionary<string, string>()
-                : tribes.Where(t => t.Class != null && t.Shares != null).ToDictionary(t => t.Class, t => t.Shares);
+            reusesOf = client.Reuses ?? new Dictionary<string, HashSet<string>>();
+            tribeReuses.Clear();
+            tribeDraws = tribes == null ? new Dictionary<string, HashSet<string>>()
+                : tribes.Where(t => t.Class != null).ToDictionary(t => t.Class, t =>
+                    new HashSet<string>((t.General ? new[] { "General", t.Class } : new[] { t.Class }).Concat(t.Shares)));
             leftOutTribes = new HashSet<string>(client.LeftOutTribes ?? new List<string>());
+            // slot_data "tribes" came with 0.5.0, so a seed without it is older and keeps the battle tribe locks.
+            battleTribeLocks = tribes == null;
             grantedUnlocks = null;
             if (Profile == null)
             {
@@ -457,32 +462,51 @@ namespace WildfrostArchipelago
         private static bool HasPacks(string clan, Dictionary<string, int> kit)
         {
             if (kit.ContainsKey("total")) return kit.All(c => PackCount(clan, c.Key == "total" ? "" : c.Key) >= c.Value);
-            int companions = PackCount(clan, "Companion"), items = PackCount(clan, "Item"), charms = PackCount(clan, "Charm");
+            double companions = PackCount(clan, "Companion"), items = PackCount(clan, "Item"), charms = PackCount(clan, "Charm");
             int needCompanions = Get(kit, "Companion"), needItems = Get(kit, "Item"), needCharms = Get(kit, "Charm");
             int extra = Get(kit, "extra"), perPack = Get(kit, "charms_per_pack");
-            if (companions < needCompanions || items < needItems || charms < needCharms) return false;
+            if (!AtLeast(companions, needCompanions) || !AtLeast(items, needItems) || !AtLeast(charms, needCharms)) return false;
             for (int inPacks = 0; inPacks <= extra; inPacks++)
             {
-                if (companions + items >= needCompanions + needItems + inPacks && charms >= needCharms + perPack * (extra - inPacks)) return true;
+                if (AtLeast(companions + items, needCompanions + needItems + inPacks)
+                    && AtLeast(charms, needCharms + perPack * (extra - inPacks))) return true;
             }
             return false;
         }
 
         private static int Get(Dictionary<string, int> kit, string key) => kit.TryGetValue(key, out int value) ? value : 0;
 
+        /// <summary>Packs' worth against a whole number needed, allowing for the rounding of fractions.</summary>
+        public static bool AtLeast(double have, int need) => have >= need - 1e-9;
+
         /// <summary>
-        /// What a run of this clan draws from (General and its own): received packs of a kind, or ("")
-        /// all packs, or (Charm) charms, which are items one by one in newer seeds and packs in older ones.
+        /// What a run of this clan draws from (General and its own, and the clans it shares): received packs of a
+        /// kind, or ("") all packs, or (Charm) charms, which are items one by one in newer seeds and packs in older
+        /// ones. For a tribe whose pools reuse other clans' cards, such a pack counts by the share of its cards the
+        /// tribe can be offered, and such a charm whole, as the apworld's DrawnCount does (2026-11-27).
         /// </summary>
-        public static int PackCount(string clan, string kind) => received.Count(key =>
+        public static double PackCount(string clan, string kind)
         {
-            string[] parts = key.Split(':');
-            // An extension's tribe also draws from the vanilla clan whose pools it shares.
-            bool shared = tribeShares.TryGetValue(clan, out string shares) && parts.Length >= 3 && parts[1] == shares;
-            if (parts.Length < 3 || parts[1] != "General" && parts[1] != clan && !shared) return false;
-            if (parts[0] == "charm") return kind == "Charm";
-            return parts[0] == "pack" && (kind == "" || parts[2] == kind);
-        });
+            var draws = Draws(clan);
+            var reused = TribeReuses(clan);
+            double total = 0;
+            foreach (string key in received)
+            {
+                string[] parts = key.Split(':');
+                if (parts.Length < 3) continue;
+                if (parts[0] == "charm")
+                {
+                    if (kind == "Charm" && (draws.Contains(parts[1]) || reused.Contains(parts[2]))) total += 1;
+                }
+                else if (parts[0] == "pack" && (kind == "" || parts[2] == kind))
+                {
+                    if (draws.Contains(parts[1])) total += 1;
+                    else if (reused.Count > 0 && packs.TryGetValue(key, out var cards) && cards.Count > 0)
+                        total += cards.Count(c => reused.Contains(c.StartsWith("card:") ? c.Substring(5) : c)) / (double)cards.Count;
+                }
+            }
+            return total;
+        }
 
         /// <summary>Whether this many of an item have been received (Progressive Storm Bells count their copies).</summary>
         public static bool Has(string key, int count = 1) =>
@@ -510,7 +534,24 @@ namespace WildfrostArchipelago
         // with any of them counts toward the goal, the user's call 2026-11-16), and the vanilla clan whose pools
         // each extension tribe shares.
         private static Dictionary<string, string> clanNames = new Dictionary<string, string>(VanillaClanNames);
-        private static Dictionary<string, string> tribeShares = new Dictionary<string, string>();
+        // The clans each tribe's runs draw from: General (unless its pools leave it out), its own, and those it
+        // shares (vanilla clans, or a mod's shared pool clans; the user's call, 2026-11-27).
+        private static Dictionary<string, HashSet<string>> tribeDraws = new Dictionary<string, HashSet<string>>();
+
+        // Per extension clan, the other clans' cards its pools hold (slot_data "reuses"), and per tribe all of those
+        // its runs can be offered: a pack counts by the share of its cards in there, a charm whole (2026-11-27).
+        private static Dictionary<string, HashSet<string>> reusesOf = new Dictionary<string, HashSet<string>>();
+        private static readonly Dictionary<string, HashSet<string>> tribeReuses = new Dictionary<string, HashSet<string>>();
+
+        private static HashSet<string> TribeReuses(string tribe)
+        {
+            if (!tribeReuses.TryGetValue(tribe, out var cards))
+                tribeReuses[tribe] = cards = new HashSet<string>(Draws(tribe).Where(reusesOf.ContainsKey).SelectMany(c => reusesOf[c]));
+            return cards;
+        }
+
+        private static HashSet<string> Draws(string tribe) =>
+            tribeDraws.TryGetValue(tribe, out var draws) ? draws : new HashSet<string> { "General", tribe };
         // Tribes of the seed's mods that its Tribes option left out (slot_data "left_out_tribes"): always locked.
         private static HashSet<string> leftOutTribes = new HashSet<string>();
 
@@ -520,9 +561,21 @@ namespace WildfrostArchipelago
         /// <summary>Pack groups for the tracker: General, the vanilla clans the seed's tribes draw from (their own,
         /// or shared: a Modded Only seed has no vanilla tribe but still their packs; 2026-11-24), then the
         /// seed's other tribes.</summary>
-        public static IEnumerable<string> PackClans => new[] { "General" }
-            .Concat(VanillaClanNames.Keys.Where(c => clanNames.ContainsKey(c) || tribeShares.ContainsValue(c)))
-            .Concat(clanNames.Keys.Where(c => !VanillaClanNames.ContainsKey(c)));
+        public static IEnumerable<string> PackClans
+        {
+            get
+            {
+                // And the clans of this seed's other packs: those holding cards a tribe's pools reuse.
+                var drawn = new HashSet<string>(clanNames.Keys.SelectMany(Draws)
+                    .Concat(packs.Keys.Select(k => k.Split(':')).Where(p => p.Length >= 3).Select(p => p[1])));
+                // General, the vanilla clans, the seed's other tribes, then the mods' shared pool clans.
+                return VanillaClanNames.Keys.Prepend("General").Where(drawn.Contains)
+                    .Concat(clanNames.Keys.Where(c => !VanillaClanNames.ContainsKey(c) && drawn.Contains(c)))
+                    .Concat(drawn.Where(c => c != "General" && !clanNames.ContainsKey(c) && !VanillaClanNames.ContainsKey(c))
+                        .OrderBy(c => c, System.StringComparer.Ordinal))
+                    .Distinct();
+            }
+        }
 
         /// <summary>The seed's tribes by ClassData name.</summary>
         public static IEnumerable<string> SeedTribeClasses => clanNames.Keys;
@@ -606,15 +659,21 @@ namespace WildfrostArchipelago
         // item arrives (the user's call, 2026-11-16).
         public static bool TribeLocked(string className) =>
             leftOutTribes.Contains(className)
-            || (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic" || tribeShares.ContainsKey(className))
+            || (TribeUnlock.ContainsKey(className) || snowdwellersIsItem && className == "Basic"
+                || clanNames.ContainsKey(className) && !VanillaClanNames.ContainsKey(className))
                && !received.Contains("tribe:" + className);
 
         /// <summary>Null when the lock isn't one of the tribe locks (then vanilla decides).</summary>
         // Under AP no battle waits for a tribe (the user's call, 2026-11-25): every battle can come up in every
-        // run, as the apworld's logic expects. Older seeds' logic waited for the tribe item, so this only opens
-        // their battles sooner.
+        // run, as the apworld's logic expects. Seeds from before 0.5.0 keep the locks (the user's call, 2026-11-27):
+        // their logic waits for the tribe item, and opening the battles sooner put checks on the map that the
+        // Checks tab counted as out of logic (the user's 0.4.1 async on the 0.5.0 client).
         public static bool? BattleLocked(string challengeName) =>
-            challengeName != null && TribeOfChallenge.ContainsKey(challengeName) ? false : (bool?)null;
+            challengeName != null && TribeOfChallenge.TryGetValue(challengeName, out string tribe)
+                ? battleTribeLocks && TribeLocked(tribe)
+                : (bool?)null;
+
+        private static bool battleTribeLocks;
 
         // A pet with no unlock (Wolfie, Snoof) is always there, unless the seed has it as an item (from
         // 2026-11-02 every pet is one).

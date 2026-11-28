@@ -52,7 +52,8 @@ namespace WildfrostArchipelago
                 findings.Add($"{unknownCards.Count} cards in the reward pools aren't in this seed, so runs offer them from the start: {string.Join(", ", unknownCards)}");
 
             // A tribe the seed's Tribes option left out is known, and locked (ApMode.TribeLocked), not unknown.
-            var unknownTribes = tribes.Select(c => c.name)
+            // A ClassData with no leaders can't be picked at tribe select (Another Snowfall's Villan, a template).
+            var unknownTribes = tribes.Where(c => c.leaders != null && c.leaders.Length > 0).Select(c => c.name)
                 .Where(n => !KnownTribes.Contains(n) && !ApMode.SeedTribeClasses.Contains(n) && !ApMode.LeftOutTribes.Contains(n))
                 .Distinct().ToList();
             contentFound |= unknownTribes.Count > 0;

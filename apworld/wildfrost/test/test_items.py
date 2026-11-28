@@ -287,6 +287,8 @@ class TestSecondsDropped(WildfrostTestBase):
     options = {**WildfrostTestBase.options, "new_challenges": False}
 
     def dropped_with(self, real: int) -> set[str]:
+        # This seed sits just under the filler floor, so spare_checks gave it a spare; these counts are made up.
+        self.world.spare_checks = set()
         with mock.patch.object(items_module, "real_item_count", return_value=real):
             try:
                 return locations_module.dropped_seconds(self.world)
@@ -307,6 +309,62 @@ class TestSecondsDropped(WildfrostTestBase):
         self.assertEqual(self.dropped_with(real), bosses)
         # No room for the bosses' group: nothing goes, the charm challenges' neither.
         self.assertEqual(self.dropped_with(int(after_bosses * (1 - locations_module.FILLER_FLOOR)) + 1), set())
+
+
+class TestRegularBattlesDropped(WildfrostTestBase):
+    """A slot with 5 or more tribes drops every tribe's regular battles (the user's calls, 2026-11-27): all or nothing,
+    only if 15% of the checks stay filler, with the challenges' spare "#2"s added to get there. The tribe pool and
+    real item counts are made up here; the vanilla rows stand in for a large pool's."""
+    options = {**WildfrostTestBase.options, "new_challenges": True}
+
+    def drop_with(self, real: int, tribes: tuple = ("Basic", "Magic", "Clunk", "ModA", "ModB")) -> bool:
+        world = self.world
+        saved = world.tribes, world.battles_dropped, world.spare_checks, world.dropped_seconds
+        world.tribes, world.spare_checks, world.dropped_seconds = tribes, None, set()
+        try:
+            with mock.patch.object(items_module, "real_item_count", return_value=real):
+                return locations_module.drop_regular_battles(world)
+        finally:
+            self.result = world.battles_dropped, world.spare_checks
+            world.tribes, world.battles_dropped, world.spare_checks, world.dropped_seconds = saved
+
+    def checks(self, dropped: bool, spares=()) -> list:
+        world = self.world
+        saved = world.battles_dropped, world.spare_checks, world.dropped_seconds
+        world.battles_dropped, world.spare_checks, world.dropped_seconds = dropped, set(spares), set()
+        try:
+            return [(key, info) for key, _, _, info in LOCATIONS if included(world, info, key)]
+        finally:
+            world.battles_dropped, world.spare_checks, world.dropped_seconds = saved
+
+    def test_few_tribes_keep_them(self) -> None:
+        self.assertFalse(self.drop_with(10, ("Basic", "Magic", "Clunk", "ModA")))
+        self.assertEqual(self.result, (False, None))
+
+    def test_only_regular_battles_go(self) -> None:
+        self.assertTrue(self.drop_with(10))
+        self.assertEqual(self.result, (True, set()))
+        kept = self.checks(True)
+        battles = [info for key, info in kept if key.startswith("battle:")]
+        self.assertTrue(battles)
+        self.assertTrue(all(info.get("boss") or info.get("true_final") or info.get("second") for info in battles))
+        self.assertTrue(any(key.endswith("#2") for key, _ in kept if key.startswith("battle:")))
+
+    def test_spares_get_it_over_the_floor(self) -> None:
+        left = len(self.checks(True))
+        floor = locations_module.FILLER_FLOOR
+        real = int(left * (1 - floor)) + 3  # just under the floor without spares
+        self.assertTrue(self.drop_with(real))
+        dropped, spares = self.result
+        self.assertTrue(spares)
+        self.assertTrue(all(key.startswith("challenge:") and key.endswith("#2") for key in spares))
+        total = left + len(spares)
+        self.assertGreaterEqual(total - real, floor * total)
+        self.assertLess(total - 1 - real, floor * (total - 1))  # no more spares than needed
+
+    def test_no_room_keeps_every_battle(self) -> None:
+        self.assertFalse(self.drop_with(len(self.checks(False))))
+        self.assertEqual(self.result, (False, None))
 
 
 class TestRandomStartingPet(WildfrostTestBase):
@@ -1130,3 +1188,32 @@ class TestRuleChanges20261116(WildfrostTestBase):
                 self.assertTrue(self.can_reach_location(location))
                 self.remove_by_name([pack("General", "Companion", n) for n in (1, 2)]
                                     + [pack("General", "Item", n) for n in (1, 2)] + charms("General", 3))
+
+
+class TestSparesFillerFloor(WildfrostTestBase):
+    """Spare "#2" checks also keep FILLER_FLOOR of the checks filler (the user's call, 2026-11-27), challenges'
+    first, as far as the spares go. Real item counts are made up here."""
+
+    def spares_with(self, real: int) -> set[str]:
+        self.world.spare_checks = set()
+        with mock.patch.object(items_module, "real_item_count", return_value=real):
+            try:
+                return locations_module.spare_checks(self.world)
+            finally:
+                self.world.spare_checks = set()
+
+    def test_floor(self) -> None:
+        self.world.spare_checks = set()
+        left = sum(1 for key, _, _, info in LOCATIONS if included(self.world, info, key))
+        floor = locations_module.FILLER_FLOOR
+        # Room for the items and the floor: no spares.
+        self.assertEqual(self.spares_with(int(left * (1 - floor))), set())
+        # Room for the items but under the floor: just enough spares to reach it, challenges' first.
+        real = int(left * (1 - floor)) + 3
+        chosen = self.spares_with(real)
+        self.assertTrue(chosen)
+        self.assertTrue(all(key.startswith("challenge:") for key in chosen))
+        total = left + len(chosen)
+        self.assertGreaterEqual(total - real, floor * total)
+        self.assertLess(total - 1 - real, floor * (total - 1))
+

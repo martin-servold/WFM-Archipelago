@@ -32,15 +32,33 @@ def read_location_rules(value: str) -> dict:
 
 
 def chosen_extensions(names) -> set[str]:
-    """The Mod Content option's extensions, each installed and loaded, or an error that says why not."""
+    """
+    The Mod Content option's extensions, each installed and loaded, or an error that says why not. A name matches
+    exactly, or else ignoring case (the user's call, 2026-11-27: "companion start" finds "Companion Start"); the
+    extension's own spelling is used from then on.
+    """
+    chosen = set()
     for name in sorted(names):
+        name = _extension_name(name)
         if name in extensions.FAILED:
             raise OptionError(f"Wildfrost: Mod Content {name!r}: its extension file didn't load: {extensions.FAILED[name]}")
         if name not in extensions.LOADED:
             have = ", ".join(sorted(extensions.LOADED)) or "none"
             raise OptionError(f"Wildfrost: Mod Content {name!r} needs its extension file ({name}{extensions.SUFFIX}) in "
                               f"your Archipelago folder, next to wildfrost.apworld; installed: {have}")
-    return set(names)
+        chosen.add(name)
+    return chosen
+
+
+def _extension_name(name: str) -> str:
+    """A Mod Content name as an extension spells it: itself if that's one, else the one name matching it ignoring case."""
+    if name in extensions.LOADED or name in extensions.FAILED:
+        return name
+    matches = {known for known in (*extensions.LOADED, *extensions.FAILED) if known.casefold() == name.casefold()}
+    if len(matches) > 1:
+        raise OptionError(f"Wildfrost: Mod Content {name!r} matches {', '.join(sorted(matches))} ignoring case: "
+                          "write it exactly as one of them")
+    return matches.pop() if matches else name
 
 
 def rebuilt_extensions(slot_data: Mapping[str, Any]) -> set[str]:
@@ -110,6 +128,8 @@ class WildfrostWorld(World):
     spare_checks: set[str] | None = None
     # The "#2" checks a seed with room to spare dropped (locations.dropped_seconds; None until worked out).
     dropped_seconds: set[str] | None = None
+    # Whether a large tribe pool dropped its regular battles (locations.drop_regular_battles; None until worked out).
+    battles_dropped: bool | None = None
     pack_limits: dict
     # This slot's tribes by ClassData name: the vanilla three and its extensions' (the user's calls, 2026-11-16),
     # and the starting one's item name.
@@ -135,9 +155,28 @@ class WildfrostWorld(World):
                                   "adds no tribes")
         else:
             tribes = available
+        if classes is None:
+            tribes = self.pick_modded_tribes(tribes)
         self.tribes = tuple(tribes)
         # Fewer tribes than the slot's content has: their checks and the challenges that need them go.
         self.tribes_limited = len(self.tribes) < len(available)
+
+    def pick_modded_tribes(self, tribes: list[str]) -> list[str]:
+        """
+        Modded Clans (the user's call, 2026-11-27: Another Snowfall alone brings 13 tribes): each mod keeps half or a
+        quarter of its tribes in the seed, rounded up, picked at random. The vanilla three aren't touched.
+        """
+        share = {self.options.modded_clans.option_half: 2, self.options.modded_clans.option_quarter: 4}.get(
+            self.options.modded_clans.value)
+        if share is None:
+            return tribes
+        by_mod: dict[str, list[str]] = {}
+        for tribe in tribes:
+            if tribe not in locations.BASE_CLANS:
+                by_mod.setdefault(content.TRIBES[tribe]["ext"], []).append(tribe)
+        kept = {tribe for mod in sorted(by_mod) for tribe in
+                self.random.sample(by_mod[mod], -(-len(by_mod[mod]) // share))}
+        return [tribe for tribe in tribes if tribe in locations.BASE_CLANS or tribe in kept]
 
     def choose_starting_tribe(self) -> None:
         """
@@ -213,6 +252,7 @@ class WildfrostWorld(World):
             self.set_bells()
             self.spare_checks = set(slot_data.get("spare_checks", []))
             self.dropped_seconds = set(slot_data.get("dropped_seconds", []))
+            self.battles_dropped = slot_data.get("battles_dropped", False)
         else:
             self.extensions = chosen_extensions(self.options.mod_content.value)
             self.set_tribes()
@@ -270,7 +310,9 @@ class WildfrostWorld(World):
             # Only this slot's game: ours and its extensions' (an unpicked extension's pet listed here would
             # stay locked for good, the client taking it for one of this seed's items).
             "location_ids": {key: loc_id for key, _, loc_id, info in content.LOCATIONS if self.uses(info)},
-            "item_keys": {str(item_id): key for key, _, item_id, info in content.ITEMS if self.uses(info)},
+            # A pet an extension removes isn't in the game: listed, the client would report it missing.
+            "item_keys": {str(item_id): key for key, _, item_id, info in content.ITEMS if self.uses(info)
+                          and not (info["kind"] == "Pet" and key.removeprefix("pet:") in self.removed["pets"])},
             "card_kinds": {key: info["kind"] for key, _, info in content.CARDS if self.uses(info)},
             "packs": self.pack_contents,
             # 0 Final Boss, 1 True Final Boss, 2 Overcranked True Final Boss (each clans_required clan).
@@ -324,12 +366,23 @@ class WildfrostWorld(World):
             # extensions remove too many (the client moves the Lumin Vase to it).
             "true_final_points": self.true_final_points,
             # This slot's tribes (the user's calls, 2026-11-16): ClassData name, item name, and for an extension's
-            # the vanilla clan whose pools it shares. The client locks each until its item arrives, counts its
-            # wins toward the goal, and its packs with the shared clan's.
-            "tribes": [{"class": tribe, "name": locations.CLANS[tribe], "shares": content.SHARES.get(tribe)}
+            # the clans whose pools it shares (a list from 2026-11-27) and "general": false when it doesn't draw
+            # General. The client locks each until its item arrives, counts its wins toward the goal, and its packs
+            # with the clans it draws.
+            "tribes": [{"class": tribe, "name": locations.CLANS[tribe], "shares": list(content.SHARES.get(tribe, ())),
+                        **({"general": False} if "General" not in content.DRAWS[tribe] else {})}
                        for tribe in self.tribes],
+            # Cards of other clans that the pools of this seed's extension clans also hold (content.REUSES), by clan:
+            # the client counts a pack by the share of its cards a tribe can draw, as logic does (rules.DrawnCount).
+            "reuses": {clan: sorted(key.removeprefix("card:") for key in content.REUSES[clan])
+                       for clan in sorted({c for t in self.tribes for c in content.DRAWS[t] if c in content.REUSES})},
+            # The extensions' shared pool clans in this seed and their labels, for the client's Packs tab.
+            "pool_clans": {clan: label for ext in self.extensions for clan, label in extensions.LOADED[ext].clans.items()
+                           if clan in items.drawn_clans(self)},
             # Spare "#2" checks added for room (locations.spare_checks), for Universal Tracker's rebuild.
             "spare_checks": sorted(self.spare_checks or ()),
             # "#2" checks dropped for a seed with room to spare (locations.dropped_seconds), for the same rebuild.
             "dropped_seconds": sorted(self.dropped_seconds or ()),
+            # Regular battles dropped for a large tribe pool (locations.drop_regular_battles), for the same rebuild.
+            "battles_dropped": bool(self.battles_dropped),
         }

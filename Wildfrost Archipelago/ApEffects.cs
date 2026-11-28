@@ -117,7 +117,11 @@ namespace WildfrostArchipelago
         private static bool Over(Battle battle) =>
             Battle.instance != battle || battle.phase != Battle.Phase.Play || !Units(battle.player).Any(IsLeader);
 
-        private static bool IsLeader(Entity entity) => entity.data?.cardType?.name == "Leader";
+        // The miniboss flag, as the game itself uses: Companion Start's leaders have their own card types
+        // (CompanionLeader, ClunkerLeader). Matching the name "Leader" found no leader in those runs, so every
+        // effect counted the battle as over, put itself back and was queued again the next frame: a save
+        // every frame, and the effect never ran (the user's run, 2026-11-26).
+        private static bool IsLeader(Entity entity) => entity.data?.cardType != null && entity.data.cardType.miniboss;
 
         private static void Requeue(string key)
         {
@@ -195,8 +199,8 @@ namespace WildfrostArchipelago
         // Bosses, small bosses (Frost Guardian, Bam/Boo) and minibosses (leaders) are never picked.
         private static bool IsBossLike(Entity entity)
         {
-            string type = entity.data?.cardType?.name;
-            return type == "Boss" || type == "BossSmall" || type == "Miniboss" || type == "Leader";
+            var type = entity.data?.cardType;
+            return type != null && (type.miniboss || type.name == "Boss" || type.name == "BossSmall" || type.name == "Miniboss" || type.name == "Leader");
         }
 
         // Aimless: each of the four hits picks a unit in the row anew. No attacker, so nothing

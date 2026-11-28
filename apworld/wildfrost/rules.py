@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
 import json
+from fractions import Fraction
 from itertools import combinations
 from typing import TYPE_CHECKING
 
-from rule_builder.rules import And, Has, HasAll, HasFromList, Or, Rule
+from rule_builder.rules import And, False_, Has, HasAll, HasFromList, Or, Rule, True_
 
-from .content import CARDS, ITEMS, LEADERS, LOCATIONS, SHARES, START_DECKS
+from .content import CARDS, DRAWS, ITEMS, LEADERS, LOCATIONS, START_DECKS, TRIBE_REUSES
 from .data import LOGIC
 from .groups import GROUPS
 from .items import STORM_BELL, STORM_BELL_LEVELS, TRUE_FINAL_BELLS, drawn_clans, in_seed
@@ -65,12 +67,90 @@ PACK_KINDS = ("Companion", "Item", "Charm")
 
 def clan_packs(clan: str, kind: str) -> list[str]:
     """
-    What a run of this clan draws from (General and its own, and for an extension's tribe the vanilla clan
-    whose pools it shares): packs of a kind, or (Charm) charms.
+    What a run of this clan draws from (General and its own, and for an extension's tribe the clans whose pools
+    it shares; content.DRAWS): packs of a kind, or (Charm) charms. Cards an extension's own pools reuse from other
+    clans count through DrawnCount instead (the user's calls, 2026-11-27).
     """
-    pools = ("General", clan, SHARES[clan]) if clan in SHARES else ("General", clan)
+    pools = DRAWS.get(clan, ("General", clan))
     return [name for _, name, _, info in ITEMS if info.get("clan") in pools and
             (info["kind"] == "Charm" if kind == "Charm" else info["kind"] == "Pack" and info["card_kind"] == kind)]
+
+
+def drawn_weights(world: WildfrostWorld, tribe: str, kind: str) -> dict[str, Fraction]:
+    """
+    What each item of a kind (Companion or Item packs, "" both, or Charm) is worth to a tribe's runs, in packs:
+    1 for the clans it draws, and for a tribe whose pools reuse other clans' cards (content.TRIBE_REUSES) the share
+    of a pack's cards it can be offered (a Snowdweller pack holding one of its three cards is a third), and a charm
+    of those cards whole (the user's calls, 2026-11-27). Packs are dealt before the rules are set.
+    """
+    draws = set(DRAWS.get(tribe, ("General", tribe)))
+    reuses = TRIBE_REUSES.get(tribe, frozenset())
+    weights: dict[str, Fraction] = {}
+    if kind == "Charm":
+        for key, name, _, info in ITEMS:
+            if info["kind"] == "Charm" and in_seed(world, name) and (
+                    info["clan"] in draws or "card:" + key.split(":", 2)[2] in reuses):
+                weights[name] = Fraction(1)
+        return weights
+    kinds = ("Companion", "Item") if kind == "" else (kind,)
+    for key, cards in world.pack_contents.items():
+        _, clan, card_kind = key.split(":", 3)[:3]
+        if card_kind not in kinds or not cards:
+            continue
+        shared = len(cards) if clan in draws else sum(1 for card in cards if card in reuses)
+        if shared:
+            weights[ITEM_NAME_BY_KEY[key]] = Fraction(shared, len(cards))
+    return weights
+
+
+@dataclasses.dataclass()
+class DrawnCount(Rule["WildfrostWorld"], game="Wildfrost"):
+    """
+    At least `count` packs' worth of a kind for a tribe's runs (drawn_weights): for a tribe whose pools reuse other
+    clans' cards, where a pack counts by the share of its cards the tribe can be offered. Other tribes use a plain
+    HasFromList of their clans' packs, which counts the same.
+    """
+
+    tribe: str
+    kind: str
+    count: int = 1
+
+    def _instantiate(self, world: WildfrostWorld) -> Rule.Resolved:
+        if self.count <= 0:
+            return True_().resolve(world)
+        weights = drawn_weights(world, self.tribe, self.kind)
+        if sum(weights.values()) < self.count:
+            return False_().resolve(world)
+        return self.Resolved(tuple(sorted(weights.items())), count=self.count, player=world.player,
+                             caching_enabled=getattr(world, "rule_caching_enabled", False))
+
+    class Resolved(Rule.Resolved):
+        weights: tuple[tuple[str, Fraction], ...]
+        count: int = 1
+
+        def _evaluate(self, state) -> bool:
+            have = state.prog_items[self.player]
+            found = Fraction(0)
+            for name, weight in self.weights:
+                if have[name]:
+                    found += weight
+                    if found >= self.count:
+                        return True
+            return False
+
+        def item_dependencies(self) -> dict[str, set[int]]:
+            return {name: {id(self)} for name, _ in self.weights}
+
+        def __str__(self) -> str:
+            return f"Has {self.count} packs' worth from ({', '.join(f'{n} x{w}' for n, w in self.weights)})"
+
+
+def drawn(clan: str, kind: str, count: int):
+    """`count` of a clan's packs of a kind ("" companion and item packs together, or Charm), as its runs draw them."""
+    if clan in TRIBE_REUSES:
+        return DrawnCount(clan, kind, count)
+    pool = clan_packs(clan, "Companion") + clan_packs(clan, "Item") if kind == "" else clan_packs(clan, kind)
+    return HasFromList(*pool, count=count)
 
 
 def packs(clan: str, companions: int, items: int, charms: int, extra: int = 0):
@@ -78,15 +158,14 @@ def packs(clan: str, companions: int, items: int, charms: int, extra: int = 0):
     Companion and item packs and charms, plus `extra` more: each one more companion or item pack, or
     CHARMS_PER_PACK more charms (so one charm doesn't stand in for a pack).
     """
-    rules = [HasFromList(*clan_packs(clan, kind), count=n) for kind, n in zip(PACK_KINDS, (companions, items, charms)) if n]
+    rules = [drawn(clan, kind, n) for kind, n in zip(PACK_KINDS, (companions, items, charms)) if n]
     if extra:
-        card_packs = clan_packs(clan, "Companion") + clan_packs(clan, "Item")
         ways = []
         for in_packs in range(extra + 1):
-            way = [HasFromList(*card_packs, count=companions + items + in_packs)]
+            way = [drawn(clan, "", companions + items + in_packs)]
             in_charms = charms + CHARMS_PER_PACK * (extra - in_packs)
             if in_charms:
-                way.append(HasFromList(*clan_packs(clan, "Charm"), count=in_charms))
+                way.append(drawn(clan, "Charm", in_charms))
             ways.append(And(*way) if len(way) > 1 else way[0])
         rules.append(Or(*ways))
     return And(*rules) if len(rules) > 1 else rules[0]
@@ -244,7 +323,7 @@ def battle_rule(key: str, info: dict, extra: int, reversed_bells: bool = False, 
 
 def card_packs(clan: str, count: int):
     """Companion and item packs together."""
-    return HasFromList(*(clan_packs(clan, "Companion") + clan_packs(clan, "Item")), count=count)
+    return drawn(clan, "", count)
 
 
 def uses_area_kit(info: dict) -> bool:
@@ -371,24 +450,28 @@ class CardRules:
             raise Impossible(bell)
         return None if self.reversed else Has(STORM_BELL, max(1, -(-points // POINTS_PER_LEVEL)))
 
-    def drawn_by(self, clans) -> Rule | None:
+    def drawn_by(self, cards) -> Rule | None:
         """
-        A run that can be offered cards of these clans: for each, its tribe or one of the slot's extension
-        tribes that shares its pools (the user's call, 2026-11-16: Terraria Aliens draws Clunkmaster cards).
-        General cards need no tribe.
+        A run that can be offered these cards: for each, a tribe of the slot that draws its clan's pools
+        (content.DRAWS; the user's call, 2026-11-16: Terraria Aliens draws Clunkmaster cards) or whose own pools
+        reuse it (content.TRIBE_REUSES, 2026-11-27). A card every tribe of the slot can draw (General's, in most
+        seeds) needs no tribe: the starting tribe does.
         """
-        parts = []
-        for clan in sorted(c for c in clans if c in CLANS):
-            runners = [t for t in self.clans if t == clan or SHARES.get(t) == clan]
+        needed: dict[tuple, None] = {}
+        for card in sorted(cards):
+            clan = CLAN_OF_CARD[card]
+            runners = tuple(t for t in self.clans if clan in DRAWS.get(t, ("General", t))
+                            or "card:" + card in TRIBE_REUSES.get(t, ()))
             if not runners:
-                raise Impossible(f"tribe {clan}")
-            parts.append(Or(*(tribe_rule({t}) for t in runners)) if len(runners) > 1 else tribe_rule({runners[0]}))
-        return both(*parts)
+                raise Impossible(f"a tribe offered {card}")
+            if len(runners) < len(self.clans):
+                needed[runners] = None
+        return both(*(Or(*(tribe_rule({t}) for t in r)) if len(r) > 1 else tribe_rule({r[0]}) for r in needed))
 
     def card(self, card: str):
         if card not in self.pack_of:
             raise Impossible(card)
-        return both(self.drawn_by({CLAN_OF_CARD[card]}), Has(self.pack_of[card]))
+        return both(self.drawn_by({card}), Has(self.pack_of[card]))
 
     def members(self, cards, clans=None) -> list:
         """
@@ -412,7 +495,7 @@ class CardRules:
         missing = [c for c in cards if c not in self.pack_of]
         if missing:
             raise Impossible(", ".join(missing))
-        tribes = self.drawn_by({CLAN_OF_CARD[c] for c in cards})
+        tribes = self.drawn_by(set(cards))
         packs = sorted({self.pack_of[c] for c in cards})
         return both(tribes, HasAll(*packs) if len(packs) > 1 else Has(packs[0]))
 
@@ -461,8 +544,7 @@ class CardRules:
             return HasFromList(*names, count=rule[2])
         if form == "packs":
             clan, kind, count = rule[1:]
-            pool = clan_packs(clan, "Companion") + clan_packs(clan, "Item") if kind == "" else clan_packs(clan, kind)
-            return HasFromList(*pool, count=count)
+            return drawn(clan, kind, count)
         if form == "tribe":
             if rule[1] not in self.clans:
                 raise Impossible(f"tribe {rule[1]}")
@@ -580,7 +662,8 @@ ITEM_NAME_BY_KEY = {key: name for key, name, _, _ in ITEMS}
 # 2026-11-24: the tribe had taken Basic's charm rules over, vanilla slots included). Equal sets are the same items,
 # so either name counts the same.
 PACK_GROUPS: dict[frozenset, list] = {}
-for _clan in (*BASE_CLANS, *(c for c in CLANS if c not in BASE_CLANS)):
+# Tribes whose pools reuse other clans' cards have DrawnCount rules of their own, so they're left out.
+for _clan in (*BASE_CLANS, *(c for c in CLANS if c not in BASE_CLANS and c not in TRIBE_REUSES)):
     for _kind in PACK_KINDS:
         PACK_GROUPS.setdefault(frozenset(clan_packs(_clan, _kind)), [_clan, _kind])
     # "": companion and item packs together (the forced extra's count).
@@ -594,6 +677,8 @@ def rule_json(rule) -> list:
         return ["has", ITEM_KEY_BY_NAME[rule.item_name], rule.count]
     if isinstance(rule, HasAll):
         return ["all", [ITEM_KEY_BY_NAME[name] for name in rule.item_names]]
+    if isinstance(rule, DrawnCount):
+        return ["packs", rule.tribe, rule.kind, rule.count]
     if isinstance(rule, HasFromList) and frozenset(rule.item_names) in PACK_GROUPS:
         return ["packs", *PACK_GROUPS[frozenset(rule.item_names)], rule.count]
     if isinstance(rule, HasFromList):

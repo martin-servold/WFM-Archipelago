@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from .. import extensions
@@ -389,7 +390,7 @@ class TestExtensionGeneration(unittest.TestCase):
         cls.out = json.loads(lines[-1].removeprefix("RESULT "))
 
     def test_loaded(self) -> None:
-        self.assertEqual(self.out["loaded"], ["BellMod", "OverflowMod", "RemoverMod", "SampleMod", "TribeMod"])
+        self.assertEqual(self.out["loaded"], ["BellMod", "OverflowMod", "PoolMod", "RemoverMod", "SampleMod", "TribeMod"])
         self.assertEqual(self.out["failed"], {})
 
     def test_slot_with_the_mod(self) -> None:
@@ -427,6 +428,7 @@ class TestExtensionGeneration(unittest.TestCase):
         self.assertEqual(got["kept"], ["Challenge - Apply 40 Ink", "Challenge - Minimalist"])
         self.assertEqual(got["cards_dealt"], [])
         self.assertFalse(got["squid_charm_in_pool"])
+        self.assertEqual(got["loki"], [False, False, False])
         self.assertTrue(got["pool_fits"])
         self.assertTrue(got["beatable"])
         self.assertEqual(len(self.out["without"]["kept"]), 3)
@@ -474,13 +476,62 @@ class TestExtensionGeneration(unittest.TestCase):
         self.assertEqual(got["mod_challenges"], [])
         self.assertTrue(got["beatable"])
 
+    def test_modded_clans(self) -> None:
+        """Modded Clans (the user's call, 2026-11-27): half or a quarter of each mod's tribes, rounded up, picked at
+        random; the vanilla three stay, and the left-out ones go to the client."""
+        for label in ("half", "quarter"):
+            got = self.out["modded_clans_" + label]
+            pool = [t for t in got["tribes"] if t.startswith("PoolMod.")]
+            self.assertEqual(got["tribes"][:3], ["Basic", "Magic", "Clunk"])
+            self.assertEqual(len(pool), 1)
+            self.assertIn("TribeMod.Bogfolk", got["tribes"])
+            self.assertEqual(len(got["tribes"]), 5)
+            self.assertEqual(got["left_out"], sorted({"PoolMod.Frost", "PoolMod.Ember"} - set(pool)))
+            self.assertEqual(got["clans_required"], 5)
+            self.assertTrue(got["beatable"])
+            self.assertTrue(got["pool_fits"])
+            self.assertTrue(got["rebuild_same"])
+        self.assertEqual(self.out["modded_clans_picks"], ["PoolMod.Ember", "PoolMod.Frost"])
+
     def test_modded_only_needs_mod_tribes(self) -> None:
         self.assertIn("adds no tribes", self.out["modded_only_no_tribes"] or "")
+
+    def test_shared_pool_clan(self) -> None:
+        """Tribes drawing a mod's shared pool and not General (the user's calls, 2026-11-27): the pool's packs are
+        items, General's aren't (nothing in the seed draws them), and logic counts only what the tribes draw."""
+        got = self.out["pool"]
+        self.assertEqual(sorted(got["tribes"], key=lambda t: t["class"]), [
+            {"class": "PoolMod.Ember", "name": "Ember", "shares": ["test.wildfrost.poolmod.pool.Enemy"], "general": False},
+            {"class": "PoolMod.Frost", "name": "Frost", "shares": ["test.wildfrost.poolmod.pool.Enemy"], "general": False}])
+        self.assertEqual(got["reuses"], {"PoolMod.Frost": ["CardUpgradeSpice", "Peppering", "Yuki"]})
+        # A Snowdweller pack holding one of Frost's reused cards counts as that share of a pack; whole Enemy packs as 1.
+        for kind in ("Item", "Companion"):
+            self.assertEqual(got[kind]["weight"], f"1/{got[kind]['size']}" if got[kind]["size"] > 1 else "1")
+            self.assertEqual(got[kind]["enemy"], ["1", "1"])
+            self.assertEqual(got[kind]["other_snowdweller"], 0)
+        self.assertEqual(got["charms"], ["Enemy Charm", "Spice Charm"])
+        self.assertEqual(got["ember_charms"], ["Enemy Charm"])
+        # Two whole Enemy item packs aren't three packs' worth; a third of a Snowdweller pack doesn't make it either.
+        self.assertFalse(got["two_enemy_packs"])
+        self.assertFalse(got["plus_pepper_pack"])
+        self.assertEqual(got["pool_clans"], {"test.wildfrost.poolmod.pool.Enemy": "Enemy"})
+        self.assertEqual(got["enemy_packs"], ["PoolMod Enemy Companion Pack 1", "PoolMod Enemy Companion Pack 2",
+                                              "PoolMod Enemy Item Pack 1", "PoolMod Enemy Item Pack 2"])
+        self.assertEqual(got["frost_pack"], ["PoolMod Frost Companion Pack 1"])
+        self.assertEqual(got["general_items"], [])
+        self.assertGreater(got["snowdweller_packs"], 0)
+        self.assertEqual(got["clunk_packs"], 0)
+        self.assertIn('["packs", "PoolMod.Frost", "Companion", 1]', got["boss_rule"])
+        self.assertEqual(got["frost_packs"], ["Enemy Charm", "PoolMod Enemy Companion Pack 1", "PoolMod Enemy Companion Pack 2",
+                                              "PoolMod Enemy Item Pack 1", "PoolMod Enemy Item Pack 2",
+                                              "PoolMod Frost Companion Pack 1"])
+        self.assertTrue(got["beatable"])
+        self.assertTrue(got["pool_fits"])
 
     def test_tribe(self) -> None:
         """An extension's tribe (the user's calls, 2026-11-16): an item, full battle checks, a Victory that counts."""
         got = self.out["tribe"]
-        self.assertEqual(got["tribes"][-1], {"class": "TribeMod.Bogfolk", "name": "Bogfolk", "shares": "Basic"})
+        self.assertEqual(got["tribes"][-1], {"class": "TribeMod.Bogfolk", "name": "Bogfolk", "shares": ["Basic"]})
         self.assertEqual(got["clans_required"], 4)
         self.assertEqual(got["victories"], ["Victory (Bogfolk)", "Victory (Clunkmasters)", "Victory (Shademancers)",
                                             "Victory (Snowdwellers)"])
@@ -727,3 +778,36 @@ class TestBaseFile(unittest.TestCase):
             if key.startswith("challenge:"):
                 with self.subTest(location=key):
                     self.assertIn(info.get("region"), extensions.REGIONS)
+
+
+class TestModContentCase(unittest.TestCase):
+    """Mod Content names match exactly, else ignoring case (the user's call, 2026-11-27)."""
+
+    def chosen(self, names, loaded=("Companion Start", "Pokefrost"), failed=()):
+        from Options import OptionError
+        from .. import extensions as ext_module
+        from ..world import chosen_extensions
+        with mock.patch.object(ext_module, "LOADED", {n: object() for n in loaded}), \
+                mock.patch.object(ext_module, "FAILED", {n: "bad" for n in failed}):
+            try:
+                return chosen_extensions(names)
+            except OptionError as e:
+                return str(e)
+
+    def test_exact(self) -> None:
+        self.assertEqual(self.chosen(["Companion Start"]), {"Companion Start"})
+
+    def test_any_case_takes_the_files_spelling(self) -> None:
+        self.assertEqual(self.chosen(["companion START", "pokefrost"]), {"Companion Start", "Pokefrost"})
+
+    def test_exact_wins_over_a_case_match(self) -> None:
+        self.assertEqual(self.chosen(["mymod"], loaded=("MyMod", "mymod")), {"mymod"})
+
+    def test_two_case_matches_ask_for_the_exact_name(self) -> None:
+        self.assertIn("write it exactly", self.chosen(["MYMOD"], loaded=("MyMod", "mymod")))
+
+    def test_failed_file_found_ignoring_case(self) -> None:
+        self.assertIn("'Broken': its extension file didn't load", self.chosen(["broken"], failed=("Broken",)))
+
+    def test_no_match(self) -> None:
+        self.assertIn("needs its extension file (CompanionStart.wildfrost.json)", self.chosen(["CompanionStart"]))

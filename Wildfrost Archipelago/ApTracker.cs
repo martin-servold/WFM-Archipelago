@@ -27,7 +27,7 @@ namespace WildfrostArchipelago
                 case "has": return ApMode.Has((string)rule[1], (int)rule[2]);
                 case "all": return rule[1].All(k => ApMode.Has((string)k));
                 case "any": return rule[1].Count(k => ApMode.Has((string)k)) >= (int)rule[2];
-                case "packs": return ApMode.PackCount((string)rule[1], (string)rule[2]) >= (int)rule[3];
+                case "packs": return ApMode.AtLeast(ApMode.PackCount((string)rule[1], (string)rule[2]), (int)rule[3]);
                 default: return false; // a newer apworld's rule this client can't read
             }
         }
@@ -67,7 +67,17 @@ namespace WildfrostArchipelago
         // Pack groups, as the apworld names them: General, then the seed's tribes (an extension's too), by kind.
         private static string[] Clans => ApMode.PackClans.ToArray();
         private static readonly string[] Kinds = { "Companion", "Item", "Charm" };
-        public static int PackGroupCount => Clans.Length * Kinds.Length;
+        public static int PackGroupCount => System.Math.Max(1, Groups(ArchipelagoMod.Client?.ItemNames).Count);
+
+        // Only the groups this seed has packs or charms in: most of a large mod's tribes have none of their own, which
+        // left dozens of empty pages titled by their raw key (the user's Another Snowfall seed, 2026-11-27: 81 pages).
+        private static List<KeyValuePair<string, string>> Groups(Dictionary<string, string> itemNames) =>
+            Clans.SelectMany(clan => Kinds.Select(kind => new KeyValuePair<string, string>(clan, kind)))
+                .Where(g => g.Value == "Charm"
+                    ? itemNames != null && itemNames.Keys.Any(k => k.StartsWith($"charm:{g.Key}:")) && ApMode.Packs.Count > 0
+                      || ApMode.Packs.Keys.Any(k => k.StartsWith($"pack:{g.Key}:Charm:"))
+                    : ApMode.Packs.Keys.Any(k => k.StartsWith($"pack:{g.Key}:{g.Value}:")))
+                .ToList();
 
         public static void Packs(StringBuilder text, ArchipelagoClient client, int group)
         {
@@ -77,15 +87,22 @@ namespace WildfrostArchipelago
                 text.Append("\n<size=80%>Connect once to load this seed's packs.</size>\n");
                 return;
             }
-            var clans = Clans;
-            if (group >= clans.Length * Kinds.Length) group = 0;
-            string clan = clans[group / Kinds.Length], kind = Kinds[group % Kinds.Length];
+            var groups = Groups(itemNames);
+            if (groups.Count == 0)
+            {
+                text.Append("\n<size=80%>This seed has no packs.</size>\n");
+                return;
+            }
+            if (group >= groups.Count) group = 0;
+            string clan = groups[group].Key, kind = groups[group].Value;
             // Newer seeds have charms as items one by one ("charm:<clan>:<card>"), so their group lists those.
             var charms = kind == "Charm" ? itemNames.Keys.Where(k => k.StartsWith($"charm:{clan}:")).OrderBy(k => itemNames[k]).ToList() : null;
             if (charms != null && charms.Count > 0)
             {
                 string label = clan == "General" ? "General" : itemNames.Keys.Where(k => k.StartsWith($"pack:{clan}:"))
-                    .Select(k => itemNames[k]).Select(n => n.Substring(0, n.IndexOf(' '))).FirstOrDefault() ?? clan;
+                    // "Another Snowfall Enemy Item Pack 3" -> "Another Snowfall Enemy" (not just its first word).
+                    .Select(k => itemNames[k]).Select(n => System.Text.RegularExpressions.Regex.Replace(n, " (Companion|Item) Pack \\d+$", ""))
+                    .FirstOrDefault() ?? clan;
                 text.Append($"\n<b>{label} Charms</b>  <size=70%>({group + 1}/{PackGroupCount}, PgUp/PgDn for others)</size>\n");
                 // Up to 42 in a group, so they run on as one wrapped list; received ones dimmed.
                 text.Append(string.Join(", ", charms.Select(c => ApMode.Has(c) ? $"<alpha=#80>{itemNames[c]}<alpha=#FF>" : itemNames[c])));

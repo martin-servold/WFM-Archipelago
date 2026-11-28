@@ -192,10 +192,14 @@ namespace WildfrostArchipelago
 
             // The base game, from base.wildfrost.json.
             var baseCards = new Dictionary<string, string>();   // name -> section (companions, items, charms)
+            var baseClanOf = new Dictionary<string, string>();  // name -> its clan (General, Basic, Magic, Clunk)
             foreach (var section in ((JObject)baseDoc["cards"]).Properties())
                 foreach (var clan in ((JObject)section.Value).Properties())
                     foreach (var c in clan.Value)
+                    {
                         baseCards[((string)c["key"]).Substring(5)] = section.Name;
+                        baseClanOf[((string)c["key"]).Substring(5)] = clan.Name;
+                    }
             var baseBattleRows = baseDoc["ap_locations"]["battles"].Children<JObject>().ToList();
             var baseBattleKeys = new HashSet<string>(baseBattleRows.Select(r => (string)r["key"]));
             var baseBattleNames = new HashSet<string>(baseBattleKeys.Select(k => k.Split(':')[2]));
@@ -209,8 +213,16 @@ namespace WildfrostArchipelago
             var oldTribeNames = oldItems.Where(r => (string)r["kind"] == "Tribe")
                 .ToDictionary(r => ((string)r["key"]).Substring(6), r => (string)r["name"]);
             var tribes = new List<Tribe>();
+            var skippedTribes = new List<GameContent.Clan>();
             foreach (var clan in game.Clans.Where(c => !BaseClans.Contains(c.Name) && Ours(c.Name)))
             {
+                // A ClassData with no leaders can't be picked at tribe select (Another Snowfall's Villan, a template).
+                if (clan.Leaders.Count == 0)
+                {
+                    notes.Add($"skipped tribe {clan.Name}: it has no leaders, so it can't be played");
+                    skippedTribes.Add(clan);
+                    continue;
+                }
                 var t = new Tribe
                 {
                     Key = clan.Name, Clan = clan,
@@ -218,21 +230,57 @@ namespace WildfrostArchipelago
                     Name = oldTribeNames.TryGetValue(clan.Name, out var n) ? n
                         : Regex.Replace(clan.Name.Substring(clan.Name.LastIndexOf('.') + 1), "(?<=[a-z])(?=[A-Z])", " "),
                 };
+                // What it draws (the user's calls, 2026-11-27): a vanilla clan's pools, General's (a mod's tribe can
+                // leave them out) and pools of the mod's own, sorted out below into its own and shared ones.
                 foreach (var pool in clan.Pools.Where(p => p != null && KindOfPool.ContainsKey(p.Type)))
                 {
                     if (!BasePools.Contains(pool.Name)) t.Pools.Add(pool);
-                    else if (ClanOf(pool.Name) is string shared && shared != "General") t.Shares = shared;
+                    else if (ClanOf(pool.Name) is string vanilla)
+                    {
+                        if (vanilla == "General") t.General = true;
+                        else if (!t.Shares.Contains(vanilla)) t.Shares.Add(vanilla);
+                    }
                 }
-                if (t.Shares == null)
-                    notes.Add($"skipped tribe {clan.Name}: it draws from none of the vanilla clans' pools, which logic counts on");
-                else tribes.Add(t);
+                tribes.Add(t);
             }
             var tribeKeys = new HashSet<string>(tribes.Select(t => t.Key));
+
+            // A pool of the mod's own that several of its tribes draw is a clan of its own (the user's call,
+            // 2026-11-27: Another Snowfall's 21 tribes all draw "EnemyItemPool" and the like), named after the pool:
+            // "EnemyItemPool", "EnemyUnitPool" and "EnemyCharmPool" make one clan, "<GUID>.pool.Enemy". A pool only
+            // one tribe draws stays that tribe's own.
+            string FamilyOf(string pool) => Regex.Replace(pool, "(Item|Unit|Charm)Pool$", "");
+            var usersOfPool = new Dictionary<string, HashSet<string>>();
+            foreach (var t in tribes)
+                foreach (var pool in t.Pools)
+                {
+                    if (!usersOfPool.TryGetValue(pool.Name, out var users)) usersOfPool[pool.Name] = users = new HashSet<string>();
+                    users.Add(t.Key);
+                }
+            var oldPoolClans = old?["clans"] as JObject;
+            var poolClans = new Dictionary<string, string>();   // clan -> its packs' label
+            var poolsOfClan = new Dictionary<string, List<GameContent.Pool>>();
+            foreach (var t in tribes)
+                foreach (var pool in t.Pools.Where(p => usersOfPool[p.Name].Count > 1).ToList())
+                {
+                    string family = FamilyOf(pool.Name);
+                    string key = $"{guid}.pool.{family}";
+                    if (!poolClans.ContainsKey(key))
+                    {
+                        // "QueenGloberry" reads "Queen Globerry"; the creator may rename it.
+                        poolClans[key] = (string)oldPoolClans?[key] ?? Regex.Replace(family, "(?<=[a-z])(?=[A-Z])", " ");
+                        poolsOfClan[key] = new List<GameContent.Pool>();
+                    }
+                    if (!poolsOfClan[key].Any(p => p.Name == pool.Name)) poolsOfClan[key].Add(pool);
+                    if (!t.Shares.Contains(key)) t.Shares.Add(key);
+                    t.Pools.Remove(pool);
+                }
 
             // Every card in the clans' pools (Tutorial's aside), with the first pool it's in. A new tribe's own pools
             // come after: their cards are the tribe's.
             var pooled = new Dictionary<string, GameContent.Pool>();
-            foreach (var clan in game.Clans.Where(c => c.Name != "Tutorial" && !tribeKeys.Contains(c.Name)))
+            var skippedClans = new HashSet<string>(skippedTribes.Select(c => c.Name));
+            foreach (var clan in game.Clans.Where(c => c.Name != "Tutorial" && !tribeKeys.Contains(c.Name) && !skippedClans.Contains(c.Name)))
                 foreach (var pool in clan.Pools.Where(p => p != null && KindOfPool.ContainsKey(p.Type)))
                     foreach (var name in pool.Cards)
                         if (!pooled.ContainsKey(name)) pooled[name] = pool;
@@ -257,8 +305,24 @@ namespace WildfrostArchipelago
                 cards.Add(new JObject { ["key"] = "card:" + kv.Key, ["name"] = Title(kv.Key),
                                         ["kind"] = KindOfPool[kv.Value.Type], ["clan"] = clan });
             }
-            // A tribe's own cards: those only in its own pools (a card a vanilla pool has keeps that clan).
+            // A shared pool clan's cards, then a tribe's own: those only in the mod's own pools (a card a vanilla pool
+            // has keeps that clan; the vanilla cards a mod's pool reuses stay in their vanilla packs, a bonus logic
+            // doesn't count for the tribe, the user's call, 2026-11-27).
             var filed = new HashSet<string>(cards.Select(c => ((string)c["key"]).Substring(5)));
+            foreach (var pc in poolsOfClan)
+                foreach (var pool in pc.Value)
+                    foreach (var name in pool.Cards)
+                        if (!string.IsNullOrEmpty(name) && !baseCards.ContainsKey(name) && filed.Add(name))
+                            cards.Add(new JObject { ["key"] = "card:" + name, ["name"] = Title(name),
+                                                    ["kind"] = KindOfPool[pool.Type], ["clan"] = pc.Key });
+            // A shared pool clan with none of the mod's own cards (only vanilla ones) gets no packs, and isn't a clan.
+            // Its pools go back to each tribe's own, so the cards they reuse are still listed (reuses).
+            foreach (var empty in poolClans.Keys.Where(k => !cards.Any(c => (string)c["clan"] == k)).ToList())
+            {
+                poolClans.Remove(empty);
+                foreach (var t in tribes.Where(t => t.Shares.Remove(empty)))
+                    t.Pools.AddRange(poolsOfClan[empty].Where(p => usersOfPool[p.Name].Contains(t.Key)));
+            }
             foreach (var t in tribes)
                 foreach (var pool in t.Pools)
                     foreach (var name in pool.Cards)
@@ -268,9 +332,17 @@ namespace WildfrostArchipelago
 
             var items = new List<JObject>();
             var labels = ClanLabelOrder.Select(c => new KeyValuePair<string, string>(c, ClanLabel[c]))
-                .Concat(tribes.Select(t => new KeyValuePair<string, string>(t.Key, t.Name))).ToList();
+                .Concat(tribes.Select(t => new KeyValuePair<string, string>(t.Key, t.Name)))
+                .Concat(poolClans).ToList();
             foreach (var t in tribes)
-                items.Add(new JObject { ["key"] = "tribe:" + t.Key, ["name"] = t.Name, ["kind"] = "Tribe", ["shares"] = t.Shares });
+            {
+                var row = new JObject { ["key"] = "tribe:" + t.Key, ["name"] = t.Name, ["kind"] = "Tribe" };
+                // One clan as a plain name, as files before 2026-11-27 had it; several as a list.
+                if (t.Shares.Count == 1) row["shares"] = t.Shares[0];
+                else if (t.Shares.Count > 1) row["shares"] = new JArray(t.Shares);
+                if (!t.General) row["general"] = false;
+                items.Add(row);
+            }
             // Packs: themed packs (a "cards" list the creator wrote) keep their cards and name; the rest of the clan and
             // kind's cards get a pack per PackSize (found in review, 2026-11-24: counting themed cards too left more plain
             // packs than plain cards, which the apworld refuses).
@@ -345,12 +417,18 @@ namespace WildfrostArchipelago
             foreach (var b in battles.Where(b => !baseBattleKeys.Contains((string)b["key"]) && Ours(((string)b["key"]).Split(':')[2])))
             {
                 locations.Add(b);
-                // Its spare "#2", only in a seed short of checks for its items (written as "spares").
-                locations.Add(new JObject { ["key"] = b["key"] + "#2" });
+                // A boss's "#2" is a twin, always in the seed, as the base game's bosses' are (the user's call, 2026-11-27:
+                // Another Snowfall replaces every boss, and its seeds lost all 18 boss "#2"s). Any other battle's is a
+                // spare, only in a seed short of checks for its items (written as "spares").
+                var second = new JObject { ["key"] = b["key"] + "#2" };
+                if ((bool)b["boss"]) second["twin"] = true;
+                locations.Add(second);
             }
             // Each tribe's battle checks (the user's call, 2026-11-16: full checks, like a vanilla clan's): every base
             // battle and the mod's own, as a Snowdweller run's, with the bosses' "#2" as twins (always in the seed).
-            var templates = baseBattleRows.Where(r => (string)r["run_tribe"] == "Basic")
+            // A base battle the loaded game no longer has (removed) is left out: its checks could never come up.
+            var inGame = new HashSet<string>(game.Battles.Select(b => b.Name));
+            var templates = baseBattleRows.Where(r => (string)r["run_tribe"] == "Basic" && inGame.Contains(((string)r["key"]).Split(':')[2]))
                 .Concat(locations.Where(l => ((string)l["key"]).StartsWith("battle:") && (string)l["run_tribe"] == "Basic")).ToList();
             foreach (var t in tribes)
                 foreach (var r in templates)
@@ -399,6 +477,9 @@ namespace WildfrostArchipelago
             Removed("battles", baseBattleNames.Where(n => !gameBattles.Contains(n)));
             Removed("challenges", baseChallenges.Where(c => !gameChallenges.Contains(c) && c.StartsWith("Challenge ")));
             Removed("bells", baseBells.Where(n => !gameBells.Contains(n)));
+            // Pets the game no longer has (Another Snowfall replaces the base game's, 2026-11-27).
+            var gamePets = new HashSet<string>(game.Pets);
+            Removed("pets", basePets.Where(p => !gamePets.Contains(p)));
             // The apworld refuses a file that leaves a boss tier with no boss (the user's call, 2026-11-26: every run's
             // map deals one from each; bosses may go if the tier keeps a base one or one of the mod's own): say so now.
             var removedBattles = new HashSet<string>((removes["battles"] ?? new JArray()).Select(n => (string)n));
@@ -607,6 +688,24 @@ namespace WildfrostArchipelago
                 ["format"] = 1, ["mod"] = mod, ["guid"] = guid, ["version"] = version,
             };
             if (salt != 0) doc["id_salt"] = salt;
+            if (poolClans.Count > 0) doc["clans"] = JObject.FromObject(poolClans);
+            // Cards of other clans that each of the mod's clans' own pools also hold (the user's calls, 2026-11-27:
+            // Another Snowfall's Enemy pools reuse base-game cards): the apworld counts a pack by the share of its cards
+            // a tribe can be offered, and keeps those packs in a seed with the tribe.
+            var clanOfCard = cards.ToDictionary(c => ((string)c["key"]).Substring(5), c => (string)c["clan"]);
+            var reuses = new JObject();
+            // Each clan's pools, and the clans whose cards its runs draw anyway (not listed again).
+            var poolsOf = poolsOfClan.Where(pc => poolClans.ContainsKey(pc.Key))
+                .Select(pc => (pc.Key, pc.Value, Drawn: new HashSet<string> { pc.Key }))
+                .Concat(tribes.Select(t => (t.Key, t.Pools, Drawn: new HashSet<string>(t.Shares.Append(t.Key).Concat(t.General ? new[] { "General" } : new string[0])))));
+            foreach (var (clan, pools, drawnAnyway) in poolsOf)
+            {
+                var other = pools.SelectMany(p => p.Cards).Where(n => !string.IsNullOrEmpty(n)).Distinct()
+                    .Where(n => (clanOfCard.TryGetValue(n, out var c) || baseClanOf.TryGetValue(n, out c)) && !drawnAnyway.Contains(c))
+                    .ToList();
+                if (other.Count > 0) reuses[clan] = Sorted(other);
+            }
+            if (reuses.Count > 0) doc["reuses"] = reuses;
             doc["cards"] = cardTree;
             doc["ap_items"] = itemTree;
             doc["ap_locations"] = locationTree;
@@ -649,7 +748,9 @@ namespace WildfrostArchipelago
 
         private class Tribe
         {
-            public string Key, Name, Shares;
+            public string Key, Name;
+            public List<string> Shares = new List<string>();   // vanilla clans and shared pool clans it also draws
+            public bool General;
             public GameContent.Clan Clan;
             public List<GameContent.Pool> Pools = new List<GameContent.Pool>();
         }

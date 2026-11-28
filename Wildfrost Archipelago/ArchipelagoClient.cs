@@ -351,6 +351,13 @@ namespace WildfrostArchipelago
         /// (the server's location list): a seed leaves some out (the charm challenges' "#2" with New
         /// Challenges, True Final Boss checks in Final Boss seeds), and those have no rule, so the Checks
         /// tab showed them as in logic (found by the user 2026-11-08).
+        /// <summary>
+        /// Whether a key is one of this seed's locations. location_ids lists every key the apworld knows, so a check
+        /// the seed left out (a large tribe pool's regular battles, dropped "#2"s) showed on the map as not sent yet
+        /// (the user's Another Snowfall run, 2026-11-27). True until the server's list arrives.
+        /// </summary>
+        public bool InSeed(string key) => seedLocations == null || seedLocations.Contains(key);
+
         public IEnumerable<string> LocationKeys => locationIds?.Where(p => seedLocations == null || seedLocations.Contains(p.Key))
             .OrderBy(p => p.Value).Select(p => p.Key) ?? Enumerable.Empty<string>();
 
@@ -403,10 +410,17 @@ namespace WildfrostArchipelago
         /// stay locked (the user's call, 2026-11-25); empty in older seeds.</summary>
         public List<string> LeftOutTribes => leftOutTribes;
 
+        /// <summary>slot_data "reuses": per extension clan, the other clans' cards (CardData names) its pools hold.</summary>
+        public Dictionary<string, HashSet<string>> Reuses => reuses;
+
+        private volatile Dictionary<string, HashSet<string>> reuses = new Dictionary<string, HashSet<string>>();
+
         public class SeedTribe
         {
             // ClassData name, its tribe item's name, and for an extension's tribe the vanilla clan whose pools it shares.
-            public string Class, Name, Shares;
+            public string Class, Name;
+            public List<string> Shares = new List<string>();   // the clans whose pools it also draws (vanilla or a mod's)
+            public bool General = true;                        // whether it draws General's pools
         }
 
         public class SeedExtension
@@ -667,9 +681,18 @@ namespace WildfrostArchipelago
             seedTribes = slotData.TryGetValue("tribes", out object tribeData) && tribeData is JArray tribeArray
                 ? tribeArray.OfType<JObject>().Select(t => new SeedTribe
                 {
-                    Class = (string)t["class"], Name = (string)t["name"], Shares = (string)t["shares"],
+                    Class = (string)t["class"], Name = (string)t["name"],
+                    // One clan as a name in seeds before 2026-11-27, a list after.
+                    Shares = t["shares"] is JArray list ? list.Select(c => (string)c).Where(c => c != null).ToList()
+                        : (string)t["shares"] is string one ? new List<string> { one } : new List<string>(),
+                    General = (bool?)t["general"] ?? true,
                 }).ToList()
                 : null;
+            // Cards of other clans an extension clan's pools also hold (slot_data "reuses", 2026-11-27), by clan.
+            reuses = slotData.TryGetValue("reuses", out object reuseData) && reuseData is JObject reuseObject
+                ? reuseObject.Properties().Where(p => p.Value is JArray)
+                    .ToDictionary(p => p.Name, p => new HashSet<string>(((JArray)p.Value).Select(c => (string)c).Where(c => c != null)))
+                : new Dictionary<string, HashSet<string>>();
             newChallenges = slotData.TryGetValue("new_challenges", out object challenges) && Convert.ToBoolean(challenges);
             snowdwellersIsItem = slotData.ContainsKey("starting_tribe");
             deathLinkOn = slotData.TryGetValue("death_link", out object death) && Convert.ToBoolean(death);
@@ -741,7 +764,7 @@ namespace WildfrostArchipelago
                 && queuedLocations.Contains(key.Substring(0, key.Length - SecondSuffix.Length))) return true;
             var current = session;
             var ids = locationIds;
-            if (current == null || ids == null || !ids.TryGetValue(key, out long id)) return null;
+            if (current == null || ids == null || !ids.TryGetValue(key, out long id) || !InSeed(key)) return null;
             try
             {
                 return current.Locations.AllLocationsChecked.Contains(id);
@@ -770,7 +793,7 @@ namespace WildfrostArchipelago
                 }
                 return;
             }
-            if (!ids.ContainsKey(key))
+            if (!ids.ContainsKey(key) || !InSeed(key))
             {
                 // Not every game event is a location (tutorial battles, excluded challenges).
                 if (!quiet) Log($"No location for {key}");
@@ -780,7 +803,7 @@ namespace WildfrostArchipelago
             // The hard moments give two checks (bosses and some challenges; apworld gen_data): the
             // second is "<key>#2", sent with the first. Offline only the first is queued, and this
             // sends both once it goes out.
-            if (ids.ContainsKey(key + SecondSuffix)) Send(current, key + SecondSuffix);
+            if (ids.ContainsKey(key + SecondSuffix) && InSeed(key + SecondSuffix)) Send(current, key + SecondSuffix);
         }
 
         private const string SecondSuffix = "#2";

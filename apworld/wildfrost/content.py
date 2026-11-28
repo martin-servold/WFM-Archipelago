@@ -135,8 +135,31 @@ EXT_OF_ITEM_NAME = {name: info["ext"] for _, name, _, info in ITEMS if "ext" in 
 # Clunk) and the loaded extensions' (their info has "ext" and "shares"). A slot has ours and its extensions'
 # (WildfrostWorld.tribes).
 TRIBES = {key.removeprefix("tribe:"): {**info, "name": name} for key, name, _, info in ITEMS if info["kind"] == "Tribe"}
-# The vanilla clan whose pools each extension tribe also draws from (rules.clan_packs).
-SHARES = {tribe: info["shares"] for tribe, info in TRIBES.items() if "shares" in info}
+# The clans whose pools each extension tribe also draws from (rules.clan_packs): vanilla clans, or its extension's
+# shared pool clans (the user's call, 2026-11-27: Another Snowfall's tribes all draw one "Enemy" pool).
+SHARES = {tribe: tuple(info["shares"]) for tribe, info in TRIBES.items() if info.get("shares")}
+
+
+def _draws(tribe: str, info: dict) -> tuple[str, ...]:
+    """General (unless the tribe's reward pools leave it out), its own and the ones it shares."""
+    return (("General",) if info.get("general", True) else ()) + (tribe,) + SHARES.get(tribe, ())
+
+
+# Every clan whose packs and charms a run of each tribe can be offered (rules.clan_packs, items.drawn_clans).
+DRAWS = {tribe: _draws(tribe, info) for tribe, info in TRIBES.items()}
+# Cards of other clans that a tribe's runs can also be offered, from the pools of its own and shared clans
+# (an extension's "reuses"; Another Snowfall's Enemy pools hold vanilla cards). Logic counts a pack by the share of
+# its cards the tribe can draw, and a charm whole (rules.DrawnCount; the user's calls, 2026-11-27).
+REUSES: dict[str, frozenset[str]] = {}  # an extension clan -> card keys
+for _ext in extensions.LOADED.values():
+    REUSES.update({clan: frozenset(cards) for clan, cards in _ext.reuses.items()})
+TRIBE_REUSES = {tribe: frozenset().union(*(REUSES.get(clan, ()) for clan in draws))
+                for tribe, draws in DRAWS.items() if any(clan in REUSES for clan in draws)}
+_CLAN_OF_CARD = {key: info["clan"] for key, _, info in CARDS}
+# Those cards' clans: their packs and charms stay in a seed with the tribe even when no tribe there draws the clan
+# (items.drawn_clans), so the cards can arrive (a Modded Only seed of Another Snowfall has no vanilla tribe).
+BONUS = {tribe: tuple(sorted({_CLAN_OF_CARD[k] for k in cards if k in _CLAN_OF_CARD} - set(DRAWS[tribe])))
+         for tribe, cards in TRIBE_REUSES.items()}
 # Each tribe's leaders and what they apply: ours (data.LEADERS) and the loaded extensions' tribes'.
 LEADERS = {clan: list(rows) for clan, rows in data.LEADERS.items()}
 for _ext in extensions.LOADED.values():

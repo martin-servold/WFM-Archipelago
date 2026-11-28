@@ -17,7 +17,7 @@ With an extension file, a seed that picks the mod gets:
 |---|---|
 | Companions, items and charms in the reward pools | Items: its cards come in packs of about 3, and each charm is an item of its own |
 | Pets | Items, locked until found |
-| Tribes | Items. Each tribe gets a check for every battle and boss, and a win with it counts toward the goal |
+| Tribes | Items. Each tribe gets a check for every battle and boss (only the bosses in a seed with 5 or more tribes), and a win with it counts toward the goal |
 | Battles in the map's battle pools | Checks, one for (each tribe * each battle) |
 | Challenges | Checks |
 | Storm bells | Count toward the storm points a seed can reach; its challenges can require them |
@@ -73,7 +73,8 @@ they can't make a seed unwinnable.
 3. In the Launcher's **Options Creator**, pick Wildfrost and add the mod's name under **Mod Content**, then
    **Export Options** into Archipelago's `Players` folder. The name is the extension (JSON) file's prefix (without
    `.wildfrost.json`). With a mod that adds tribes, the **Tribes** option can run only its tribes (Modded Only) or
-   only the vanilla ones (Vanilla Only).
+   only the vanilla ones (Vanilla Only), and **Modded Clans** can keep half or a quarter of each mod's tribes, picked
+   at random, for mods with many.
 4. Make sure the mod is still enabled in the game, and play. You'll get a warning if it's disabled when you connect.
 
 Who needs the extension file in their Archipelago folder: the computer that generates the seed, and anyone tracking it
@@ -252,6 +253,8 @@ existing file in the Extensions folder (or the `folder=` you give) by its GUID a
 |---|---|
 | `format` | Always `1` |
 | `mod`, `guid`, `version`, `id_salt` | Your extension's name, your mod's GUID, the file's version, and the salt (only there when a clash moved your [ID block](#id-blocks)) |
+| `clans` | Your shared pool clans and their pack labels (only there when several of your tribes draw one pool of yours) |
+| `reuses` | Cards of other clans that your clans' own pools also hold, by clan |
 | `cards` | Your reward cards, by kind (`companions`, `items`, `charms`), then by clan |
 | `ap_items` | Archipelago items, by kind: `Pack`, `Charm`, `Pet`, `Tribe` |
 | `ap_locations` | Checks: `battles`, `challenges`, and `twins` and `spares` ("#2" checks) |
@@ -264,9 +267,32 @@ existing file in the Extensions folder (or the `folder=` you give) by its GUID a
 
 ### Clans
 
-A card, pack or charm belongs to a clan: `General` (every tribe can be offered it; the game's Snow pools count as
-General), `Basic` (Snowdwellers), `Magic` (Shademancers), `Clunk` (Clunkmasters), or one of your tribes by its
-ClassData name.
+A card, pack or charm belongs to a clan: `General` (the game's Snow pools count as General), `Basic`
+(Snowdwellers), `Magic` (Shademancers), `Clunk` (Clunkmasters), one of your tribes by its ClassData name, or one of
+your shared pool clans.
+
+A **shared pool clan** is a reward pool of your own that several of your tribes draw from, for example an
+`EnemyItemPool` that all your tribes have. `/generate` makes it a clan named `<your GUID>.pool.<pool name>`
+(`EnemyItemPool`, `EnemyUnitPool` and `EnemyCharmPool` make one clan, `...pool.Enemy`) and lists it under `clans`
+with the label its packs show:
+
+```json
+"clans": {"dev.wildfrost.MyMod.pool.Enemy": "Enemy"}
+```
+
+Its packs are named "MyMod Enemy Item Pack 1". Change the label to rename them all. A pool only one of your tribes
+draws stays that tribe's own clan.
+
+Cards of other clans that your pools also hold (base-game cards, usually) stay in their own packs. `/generate` lists
+them under `reuses`, by the clan whose pools hold them:
+
+```json
+"reuses": {"dev.wildfrost.MyMod.pool.Enemy": ["FrostBell", "CardUpgradeSpice"], "dev.wildfrost.MyMod.Frost": ["Peppering"]}
+```
+
+Logic then counts such a pack by the share of its cards your tribe can be offered (a Snowdweller pack holding one of
+your three cards counts as a third of a pack), and such a charm whole. A seed with your tribe keeps those packs and
+charms even when no tribe in it draws their clan (a Modded Only seed, say).
 
 ### Cards
 
@@ -290,8 +316,12 @@ and feed the `applies` and `trait` rules.
 - **Charm:** one item per charm. The key is `charm:<clan>:<the charm's CardUpgradeData name>`, and a row needs only its
   `key` and `id`.
 - **Pet:** `pet:` plus the pet's internal name.
-- **Tribe:** `tribe:` plus the ClassData name, and `shares`: the vanilla clan (`Basic`, `Magic` or `Clunk`) whose
-  pools your tribe also draws from. Logic counts that clan's packs for your tribe's runs.
+- **Tribe:** `tribe:` plus the ClassData name. `shares` names the other clans whose pools your tribe draws from: a
+  vanilla clan (`Basic`, `Magic` or `Clunk`), your shared pool clans, or a list of several. `"general": false` says
+  your tribe's reward pools leave out General's. Logic counts the packs of exactly those clans (and General's,
+  unless left out) for your tribe's runs, plus the cards its pools reuse (see [Clans](#clans)). `/generate` writes
+  them from your tribes' reward pools. A tribe with no
+  leaders can't be played, so `/generate` leaves it out.
 
 ### Locations
 
@@ -313,11 +343,16 @@ and feed the `applies` and `trait` rules.
 
   There are no battle locks: in the base game some battles only appear once a tribe is unlocked, but under Archipelago
   every battle can come up in every run.
+
+  Keep every battle row, even if your mod adds many tribes. A seed with 5 or more tribes drops the regular battles
+  itself when it has room (see [Good to know](#good-to-know)), and needs them back when it doesn't. A row deleted by
+  hand comes back the next time you run `/generate`, with a new ID.
 - **Challenges:** keys are `challenge:<ChallengeData name>`. The game reports a challenge done when its ChallengeData
   completes, so nothing else is needed in game.
 - **twins:** `{"<key>": id}`: A double ("My Challange #2") check for a tribe's bosses. They're in the seed unless it
   has far more checks than items (see [Good to know](#good-to-know)).
-- **spares:** `{"<key>": id}`: "#2" checks that only appear when a seed is short of checks for all its items.
+- **spares:** `{"<key>": id}`: "#2" checks that only appear when a seed is short of checks for all its items, or
+  has less than 15% of its checks left for filler.
   `/generate` writes one for each of your challenges and battles; there's nothing to do.
 
 Only battles in the map's battle pools come up in a run. A battle your mod starts some other way never becomes a check.
@@ -326,10 +361,11 @@ Only battles in the map's battle pools come up in a run. A battle your mod start
 
 ```json
 "removes": {"cards": ["Egg"], "charms": ["CardUpgradeInk"], "battles": ["Mimiks"],
-            "challenges": ["Challenge Charm 23"], "bells": ["9.MoreEnemiesInBossBattles"]}
+            "challenges": ["Challenge Charm 23"], "bells": ["9.MoreEnemiesInBossBattles"], "pets": ["BerryPet"]}
 ```
 
-Names are the vanilla game's internal names. Challenges that become impossible drop out of the seed.
+Names are the vanilla game's internal names. Challenges that become impossible drop out of the seed. A removed pet
+isn't an item in the seed, and is never the starting pet.
 
 Bosses can be removed, as long as every boss tier keeps a boss: every run's map deals one from each. The tiers are
 the Area 1 bosses (tier 2: `Split Boss`, `Frenzy Boss`), the Area 2 bosses (tier 5: `Toadstool Boss`,
@@ -349,6 +385,19 @@ maximum the player can reach.
 
 A challenge's `rule` is a list whose first word is its form. Card names are CardData names without `card:`. A rule
 may name the base game's cards, items and groups and your own, but not another extension's.
+
+For worked examples, see the base game's own file,
+[`base.wildfrost.json`](apworld/wildfrost/base.wildfrost.json): it's in the same format as yours, and every base-game
+challenge's `rule` and `region` is written there (under `ap_locations.challenges`), with the `groups` they use. A few
+from it:
+
+| Challenge | Its rule |
+|---|---|
+| Kill 3 Demonized enemies | `["or", [["has", "pet:DemonPet", 1], ["applies", "Demonize"]]]` |
+| Recycle 20 Junk | `["or", [["trait", "Recycle"], ["starts_with", "SunShard"]]]` |
+| Ritual (sacrifice allies) | `["two_of", "sacrifice"]` |
+| Block 10 hits with Clunkers | `["or", [["starts_with", "clunkers"], ["any_card", "clunkers"]]]` |
+| One Punch | `["clan_kit", {"starts_with": "Sword", "area_kit": true}]` |
 
 | Rule | Needs |
 |---|---|
@@ -391,8 +440,8 @@ What logic assumes a run needs to get to a certain area/boss.
 ### Regions
 
 `region` says how far into a run the challenge can be done. It adds a **kit**, the packs logic expects a run to need
-to get that far, on top of the rule. Packs count from what one tribe's runs can draw (General, the tribe's own and
-the clan it shares):
+to get that far, on top of the rule. Packs count from what one tribe's runs can draw (General unless its pools leave
+it out, the tribe's own and the clans it shares):
 
 | Region | Adds |
 |---|---|
@@ -451,19 +500,24 @@ trait `/generate` writes for any card that summons an ally (not one that adds a 
 
 ## Good to know
 
-- **More items than checks:** an extension that adds many items and few checks fills the seed with spare "#2" checks,
-  then with fuller packs. That works, but challenges for your content are better, so `/generate` suggests adding some
+- **More items than checks:** an extension that adds many items and few checks fills the seed with spare "#2" checks
+  until at least 15% of the checks are left for filler, then, if the spares run out before every item has a check,
+  with fuller packs. That works, but challenges for your content are better, so `/generate` suggests adding some
   when your items outnumber your checks.
 - **More checks than items:** a tribe brings a check for every battle, so a seed with your tribes can have far more
-  checks than items. Then it drops every boss's "#2" check (the base game's and yours), and after those the charm
-  challenges' "#2"s, a whole group at a time, as long as at least 15% of its checks are still left for filler.
+  checks than items. With 5 or more tribes in a seed, every tribe's regular battles stop being checks, keeping only
+  the bosses, if at least 15% of the checks are still left for filler, adding spare "#2" checks to challenges to get
+  there if needed. Then the seed drops every boss's "#2" check (the base game's and yours), and after those the charm
+  challenges' "#2"s, a whole group at a time, under the same 15% rule.
 - **Several mods together:** players can pick any mods whose extensions they have. Each mod's cards go only into its
   own packs. One mod's battles get no checks for another mod's tribes.
-- **Tribes option:** players can run only your tribes (Modded Only) or only the vanilla ones (Vanilla Only). Without
-  a tribe, its battle checks go, and so do the packs and charms of any clan no remaining tribe draws from (a tribe
-  draws from General, its own pools and the clan it shares). Challenges that need what's gone are left out. In a
+- **Tribes option:** players can run only your tribes (Modded Only) or only the vanilla ones (Vanilla Only), and the
+  Modded Clans option can keep half or a quarter of your tribes (rounded up), picked at random. Without a tribe, its battle checks go, and so do the packs and charms of any clan no remaining tribe draws from (a tribe
+  draws from General unless its pools leave it out, its own pools and the clans it shares). Challenges that need what's gone are left out. In a
   Vanilla Only seed your tribes stay locked in game, but your cards and charms that are added to the vanilla pools are
   still available.
+- **Leaders:** the Archipelago mod finds a run's leader by the game's own miniboss flag, so leaders with a card type
+  of their own (like Companion Start's) work with traps, boons and DeathLink.
 - **Mods that aren't picked:** if a player has your mod enabled but their seed doesn't use your extension, your cards
   are offered from the start, your tribes send no checks, and the Archipelago mod warns about both.
 
