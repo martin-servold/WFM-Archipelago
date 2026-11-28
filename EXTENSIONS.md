@@ -33,7 +33,7 @@ Check here first. These are extension files shared by the creators of their mods
 
 | Mod | Extension file | Built in |
 |---|---|---|
-| *None listed yet* | | |
+| Companion Start | Inside `wildfrost.apworld` (1.0.1) | Yes |
 
 ## What you need
 

@@ -29,7 +29,9 @@ def generate(options: dict, fill: bool = True):
     return multiworld
 
 
-out: dict = {"loaded": sorted(extensions.LOADED), "failed": extensions.FAILED}
+out: dict = {"loaded": sorted(n for n, e in extensions.LOADED.items() if not e.path.startswith(extensions.OFFICIAL_DIR)),
+             "built_in": [e.path for e in extensions.LOADED.values() if e.path.startswith(extensions.OFFICIAL_DIR)],
+             "failed": extensions.FAILED}
 
 with_mod = generate({"mod_content": ["SampleMod"]})
 world = with_mod.worlds[1]

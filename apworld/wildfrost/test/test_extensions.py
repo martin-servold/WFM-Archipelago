@@ -393,6 +393,11 @@ class TestExtensionGeneration(unittest.TestCase):
         self.assertEqual(self.out["loaded"], ["BellMod", "OverflowMod", "PoolMod", "RemoverMod", "SampleMod", "TribeMod"])
         self.assertEqual(self.out["failed"], {})
 
+    def test_built_in_files_load(self) -> None:
+        """Every file in OFFICIAL_DIR (Companion Start, 2026-11-28) loads with the test files beside it."""
+        names = [where for where, _ in extensions.official_files()]
+        self.assertEqual(sorted(self.out["built_in"]), sorted(names))
+
     def test_slot_with_the_mod(self) -> None:
         got = self.out["with"]
         self.assertEqual(len(got["locations"]), 7)
@@ -697,7 +702,7 @@ class TestFilesInOwnProcess(unittest.TestCase):
             {"A.wildfrost.json": pack_string, "B.wildfrost.json": themed_dict, "C.wildfrost.json": bad_clans,
              "D.wildfrost.json": "[1, 2"},
             "from worlds.wildfrost import extensions\n"
-            "print('RESULT ' + json.dumps({'loaded': list(extensions.LOADED), 'failed': extensions.FAILED}))")
+            "print('RESULT ' + json.dumps({'loaded': [n for n, e in extensions.LOADED.items() if not e.path.startswith(extensions.OFFICIAL_DIR)], 'failed': extensions.FAILED}))")
         self.assertEqual(got["loaded"], [])
         self.assertEqual(sorted(got["failed"]), ["A", "B", "C", "D"])
         self.assertIn("should be an object", got["failed"]["A"])
@@ -721,7 +726,7 @@ class TestFilesInOwnProcess(unittest.TestCase):
              "B.wildfrost.json": reader("Reader", ["two_of", "applies:Bog"]),
              "C.wildfrost.json": reader("Maker", None, {"applies:Bog": ["tribe:Clunk"]})},
             "from worlds.wildfrost import content, extensions\n"
-            "print('RESULT ' + json.dumps({'loaded': sorted(extensions.LOADED), 'failed': extensions.FAILED}))")
+            "print('RESULT ' + json.dumps({'loaded': sorted(n for n, e in extensions.LOADED.items() if not e.path.startswith(extensions.OFFICIAL_DIR)), 'failed': extensions.FAILED}))")
         self.assertEqual(got["loaded"], ["SampleMod"])
         self.assertIn("unknown group 'applies:Bog'", got["failed"]["Reader"])
         self.assertIn("is already SampleMod's", got["failed"]["Maker"])
@@ -742,7 +747,7 @@ class TestFilesInOwnProcess(unittest.TestCase):
             "from worlds.wildfrost.world import WildfrostWorld, read_location_rules\n"
             "mw = setup_multiworld(WildfrostWorld, gen_steps, seed=3, options={'starting_tribe': 'snowdwellers'})\n"
             "rules = json.dumps(read_location_rules(mw.worlds[1].fill_slot_data()['location_rules']))\n"
-            "print('RESULT ' + json.dumps({'loaded': list(extensions.LOADED), 'failed': extensions.FAILED,\n"
+            "print('RESULT ' + json.dumps({'loaded': [n for n, e in extensions.LOADED.items() if not e.path.startswith(extensions.OFFICIAL_DIR)], 'failed': extensions.FAILED,\n"
             "    'basic': PACK_GROUPS[frozenset(clan_packs('Basic', 'Charm'))],\n"
             "    'tribe_in_rules': 'TribeMod.Bogfolk' in rules, 'basic_charm_rules': '\"Basic\", \"Charm\"' in rules}))")
         self.assertEqual((got["loaded"], got["failed"]), (["TribeMod"], {}))

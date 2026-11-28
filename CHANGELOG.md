@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+Install the new `wildfrost.apworld` and update the mod together. Seeds made with 0.4.x keep working with this version of the mod, battle tribe locks included.
+
+**Content from other mods**
+
+- **Mod Content** (new option): content from other Wildfrost mods joins the seed: their cards in packs of their own, their charms and pets as items, their battles and challenges as checks, their storm bells, and their tribes. Each mod needs its extension file (`<Mod>.wildfrost.json`) in your Archipelago folder beside `wildfrost.apworld`, and the mod loaded in your game. Names match in any case. See [EXTENSIONS.md](EXTENSIONS.md).
+- **Companion Start** is built into the apworld: no separate file needed. A newer loose file of a built-in mod is used instead.
+- **Making a file:** `/generate <GUID>` in the client log's text line writes a mod's extension file from the loaded game. A rerun keeps its IDs and your hand edits. New challenges start as filler only until they get a rule.
+- **On connect**, the mod checks that the seed's mods are loaded and match, and warns with a toast and the log when one is missing or differs.
+- **Mods that remove content** (cards, charms, pets, battles, challenges, storm bells, bosses) leave it out of the seed; every boss tier keeps a boss.
+
+**Tribes**
+
+- **Tribes** (new option): All, Vanilla Only or Modded Only. Tribes from Mod Content get full checks like the vanilla three: each battle per tribe, the bosses' "#2", and a Victory that counts toward Goal Clans Required.
+- **Modded Clans** (new option): All, Half or a Quarter of each mod's tribes, picked at random (rounded up, so each mod keeps one).
+- **Starting Tribe: Any Tribe** (new choice): one of every tribe in the seed, Mod Content's included.
+- **Large tribe pools:** with 5 or more tribes in a seed, regular battles stop being checks and only the bosses stay, so storm bells aren't lost among a hundred battles.
+- **Battles have no tribe locks:** the Bog Berries, Snow Lumps, Noxious Shrooms, Toothy Shades, Ink Sacks and Gunk Bugs can come up on a profile without the Shademancers or Clunkmasters.
+
+**Checks and logic**
+
+- **Challenge logic follows what cards do:** Add 10 Scrap needs a card that applies Scrap, Apply Haze a Haze card, Overburn a card that applies it, Ritual two sacrifice cards, and so on. Challenges your tribe's starting deck already covers (Block 10 hits with Woodhead or Junkhead, Recycle with the Sun Shard, Summon 50 with the Junjun Mask, ...) are in logic from the start.
+- **Bigger Hitter** holds only filler, like Gnomebringer.
+- **Filler room:** at least 15% of a seed's checks hold filler (Bling, boons, traps). A seed short of room gets spare "#2" checks on challenges; a seed with checks to spare drops "#2" checks, the bosses' first. Vanilla seeds keep theirs.
+- **Map markers:** a battle that isn't a check in the seed (a dropped regular battle) no longer shows as "Check not sent yet".
+- **Packs tab:** lists only the clans and kinds the seed has packs or charms in.
+
+**Fixes**
+
+- Game Speed Up's saved speed now takes at the start, without pressing F6.
+- Cards from other mods show their names in the log and toasts.
+- A seed whose received tribes all come from a mod that's turned off no longer crashes at leader select.
+- Traps and boons work with leaders of other card types (Companion Start's).
+- A crash in the game's "Defeat a Boss without applying Snow" challenge mid-fight.
+
 ## 0.4.1 (2026-11-13)
 
 Install the new `wildfrost.apworld` and update the mod together: seeds made with this apworld need this version of the mod for the Checks tab (an older mod shows every open check as in logic). Seeds made before keep working with this mod.
